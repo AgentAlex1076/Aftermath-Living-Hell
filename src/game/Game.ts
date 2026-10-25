@@ -34,8 +34,7 @@ import { CraftingPanel, OvenPanel, StoragePanel } from '../ui/StationPanels';
 import { assembleGunHeld } from '../models/guns';
 import { models, registerModels } from '../models';
 import { CollisionWorld } from '../physics/Collision';
-import { CameraRig, type PerspectiveMode } from '../render/CameraRig';
-import { FirstPersonViewModel } from '../render/FirstPersonViewModel';
+import { CameraRig } from '../render/CameraRig';
 import { createRenderer } from '../render/createRenderer';
 import { Debris } from '../render/Debris';
 import { Environment } from '../render/Environment';
@@ -129,9 +128,6 @@ export class Game {
   private recorded = false;
   private readonly debug: DebugPanel;
 
-  private perspective: PerspectiveMode = 'first-person';
-  private readonly viewModel: FirstPersonViewModel;
-
   private state: GameState = 'title';
   private introElapsed = 0;
   private introImpactDone = false;
@@ -164,8 +160,6 @@ export class Game {
     this.renderer = createRenderer(appRoot);
     this.rig = new CameraRig(window.innerWidth / window.innerHeight);
     this.scene.add(this.rig.camera);
-    this.viewModel = new FirstPersonViewModel();
-    this.rig.camera.add(this.viewModel.root);
     this.env = new Environment(this.scene, this.seed);
     this.input = new Input(this.renderer.domElement);
     this.lights = new LightPool(this.scene);
@@ -288,7 +282,7 @@ export class Game {
     });
     this.metaOverlay = new MetaOverlay(uiRoot, this.meta, this.icons, (seed) => this.replay(seed));
     new StartScreen(uiRoot, this.meta, {
-      onStart: (perspective) => this.beginPlay(perspective),
+      onStart: () => this.beginPlay(),
       onCodex: () => this.metaOverlay.showCodex(),
       onLedger: () => this.metaOverlay.showLedger(),
     });
@@ -354,13 +348,8 @@ export class Game {
     this.loop.start();
   }
 
-  private beginPlay(perspective: PerspectiveMode): void {
+  private beginPlay(): void {
     if (this.state !== 'title') return;
-    this.perspective = perspective;
-    this.rig.setPerspective(perspective);
-    // Keep survivor head and body fully visible during cinematic cutscene
-    this.animator.setFirstPersonMode(false);
-    this.viewModel.setVisible(false);
     this.state = 'intro';
     this.introElapsed = 0;
     this.introImpactDone = false;
@@ -384,22 +373,7 @@ export class Game {
     this.input.enabled = true;
     this.hud.setCutsceneLetterbox(false);
     this.hud.setVisible(true);
-
-    if (this.perspective === 'first-person') {
-      this.rig.setYaw(this.player.facing);
-      this.rig.fpPitch = 0;
-      this.rig.camera.fov = 76;
-      this.rig.camera.near = 0.08;
-      this.rig.camera.updateProjectionMatrix();
-      this.animator.setFirstPersonMode(true);
-      this.viewModel.setVisible(true);
-      this.input.requestPointerLock();
-      this.hud.setCrosshair(window.innerWidth / 2, window.innerHeight / 2, true);
-    } else {
-      this.animator.setFirstPersonMode(false);
-      this.viewModel.setVisible(false);
-      this.hud.setCrosshair(0, 0, false);
-    }
+    this.hud.setCrosshair(0, 0, false);
 
     window.setTimeout(() => events.emit('toast', { text: 'Your gear is in the crate by the door. Grab it.', tone: 'info' }), 700);
     window.setTimeout(() => events.emit('toast', { text: 'The Gun Bench is between the table and the oven. A receiver is the core.', tone: 'info' }), 2800);
@@ -415,16 +389,6 @@ export class Game {
     if (paused) this.pauseScreen.setRun(this.liveScore(), this.meta.lifetime.bestScore, this.raid.raidsSurvived, this.runTime);
     this.pauseScreen.setVisible(paused);
     document.body.classList.toggle('playing', !paused);
-
-    if (this.perspective === 'first-person') {
-      if (paused) {
-        this.input.exitPointerLock();
-        this.hud.setCrosshair(0, 0, false);
-      } else if (!this.buildMode.active && !this.inventoryView.open) {
-        this.input.requestPointerLock();
-        this.hud.setCrosshair(window.innerWidth / 2, window.innerHeight / 2, true);
-      }
-    }
   }
 
   /** Opens the backpack with the crafting, oven or storage box panel beside it. */
@@ -450,16 +414,6 @@ export class Game {
     this.inventoryView.setOpen(open);
     this.input.enabled = !open;
     document.body.classList.toggle('playing', !open);
-
-    if (this.perspective === 'first-person') {
-      if (open) {
-        this.input.exitPointerLock();
-        this.hud.setCrosshair(0, 0, false);
-      } else if (!this.buildMode.active && this.state === 'playing') {
-        this.input.requestPointerLock();
-        this.hud.setCrosshair(window.innerWidth / 2, window.innerHeight / 2, true);
-      }
-    }
   }
 
   private setGunBenchOpen(open: boolean): void {
@@ -488,25 +442,6 @@ export class Game {
     if (on && !this.shownBuildHint) {
       this.shownBuildHint = true;
       events.emit('toast', { text: 'Foundations first. Q flips to traps and power.', tone: 'info' });
-    }
-
-    if (this.perspective === 'first-person') {
-      this.rig.setBuildMode(on);
-      if (on) {
-        this.input.exitPointerLock();
-        this.hud.setCrosshair(0, 0, false);
-        this.animator.setArmsVisible(true);
-        this.animator.setHeadVisible(false);
-        this.viewModel.setVisible(false);
-      } else {
-        if (this.state === 'playing' && !this.inventoryView.open) {
-          this.input.requestPointerLock();
-          this.hud.setCrosshair(window.innerWidth / 2, window.innerHeight / 2, true);
-        }
-        this.animator.setArmsVisible(false);
-        this.animator.setHeadVisible(false);
-        this.viewModel.setVisible(true);
-      }
     }
   }
 
@@ -587,10 +522,7 @@ export class Game {
     this.state = 'dead';
     this.inventoryView.setOpen(false);
     this.input.enabled = false;
-    this.input.exitPointerLock();
     this.hud.setCrosshair(0, 0, false);
-    this.animator.setHeadVisible(true);
-    this.viewModel.setVisible(false);
     this.hud.setVisible(false);
     document.body.classList.remove('playing');
     events.emit('camera:shake', { amount: 0.8 });
@@ -658,7 +590,6 @@ export class Game {
       if (id === this.heldItem) return;
       this.heldItem = id;
       this.animator.setHeld(assembleGunHeld(st.gun.parts), 'gun');
-      this.viewModel.setHeld(assembleGunHeld(st.gun.parts), id);
       return;
     }
     const def: ItemDef | null = st ? ITEMS[st.item] : null;
@@ -671,7 +602,6 @@ export class Game {
       this.heldModels.set(id, model);
     }
     this.animator.setHeld(model, 'tool');
-    this.viewModel.setHeld(id ? models.create(id, 1) : null, id);
   }
 
   private fixedUpdate(dt: number): void {
@@ -744,13 +674,6 @@ export class Game {
       this.hasGroundHit = false;
       return;
     }
-    if (this.perspective === 'first-person' && this.rig.buildTransition < 0.5) {
-      this.raycaster.setFromCamera(new THREE.Vector2(0, 0), this.rig.camera);
-      const hit = this.raycaster.ray.intersectPlane(this.aimPlane, this.aimHit);
-      this.player.setAim(hit);
-      this.hasGroundHit = this.raycaster.ray.intersectPlane(this.groundPlane, this.groundHit) !== null;
-      return;
-    }
     this.mouseNdc.set(this.input.mouseNdc.x, this.input.mouseNdc.y);
     this.raycaster.setFromCamera(this.mouseNdc, this.rig.camera);
     const hit = this.raycaster.ray.intersectPlane(this.aimPlane, this.aimHit);
@@ -778,8 +701,6 @@ export class Game {
     const playing = this.state === 'playing' && !this.inventoryView.open && !this.gunBench.isOpen;
     const dt = this.state === 'paused' ? 0 : frameDt * this.loop.timeScale;
     const p = this.player;
-
-    const mouseDelta = this.input.consumeMouseDelta();
 
     this.renderPos.lerpVectors(p.prevPosition, p.position, alpha);
     const facing = p.prevFacing + wrapAngle(p.facing - p.prevFacing) * alpha;
@@ -864,36 +785,14 @@ export class Game {
         const u = (t - tStandEnd) / (tTotal - tStandEnd);
         const e = smoothstep(0, 1, u);
 
-        if (this.perspective === 'first-person') {
-          targetYaw = 75;
-          targetPitch = 22;
-          targetDist = 5.8;
-          targetFocusY = 0.85;
-        } else {
-          targetYaw = lerp(75, CONFIG.camera.yawDeg, e);
-          targetPitch = lerp(22, CONFIG.camera.pitchDeg, e);
-          targetDist = lerp(5.8, CONFIG.camera.distance, e);
-          targetFocusY = lerp(0.85, 1.0, e);
-        }
+        targetYaw = lerp(75, CONFIG.camera.yawDeg, e);
+        targetPitch = lerp(22, CONFIG.camera.pitchDeg, e);
+        targetDist = lerp(5.8, CONFIG.camera.distance, e);
+        targetFocusY = lerp(0.85, 1.0, e);
       }
 
-      if (this.perspective === 'first-person') {
-        const panStart = 3.65;
-        if (t >= panStart) {
-          const panProgress = smoothstep(panStart, tTotal, t);
-          this.rig.updateCutscenePanToFirstPerson(dt, this.renderPos, facing, panProgress, 75, 22, 5.8, 0.85);
-          // Keep head visible until the camera has reached the eye socket at the very end of the cutscene
-          this.animator.setFirstPersonMode(panProgress >= 0.98);
-        } else {
-          this.animator.setFirstPersonMode(false);
-          this.focusTarget.set(this.renderPos.x, targetFocusY, this.renderPos.z);
-          this.rig.updateCutscene(dt, this.focusTarget, targetYaw, targetPitch, targetDist);
-        }
-      } else {
-        this.animator.setFirstPersonMode(false);
-        this.focusTarget.set(this.renderPos.x, targetFocusY, this.renderPos.z);
-        this.rig.updateCutscene(dt, this.focusTarget, targetYaw, targetPitch, targetDist);
-      }
+      this.focusTarget.set(this.renderPos.x, targetFocusY, this.renderPos.z);
+      this.rig.updateCutscene(dt, this.focusTarget, targetYaw, targetPitch, targetDist);
 
       this.input.consumeWheel();
 
@@ -912,27 +811,8 @@ export class Game {
         this.renderPos,
         playing && p.hasAimPoint ? p.aimPoint : null,
         this.input.consumeWheel(),
-        mouseDelta.x,
-        mouseDelta.y,
-        p.dodgeProgress,
       );
-
-      if (this.perspective === 'first-person') {
-        const inTopDownBuild = this.rig.buildTransition > 0.5;
-        this.animator.setArmsVisible(inTopDownBuild);
-        this.animator.setHeadVisible(false);
-      }
     }
-
-    const moving = p.actualVelocity.lengthSq() > 0.05;
-    this.viewModel.update(
-      dt,
-      p,
-      moving,
-      p.sprinting,
-      this.perspective === 'first-person',
-      this.rig.buildTransition,
-    );
 
     this.world.update(dt, this.renderPos);
     this.weather.update(dt, this.rig.currentFocus);
@@ -1020,12 +900,7 @@ export class Game {
     const it = playing ? this.currentInteractable : null;
     this.hud.setPrompt(it ? it.verb : null, it?.label);
 
-    if (this.perspective === 'first-person') {
-      const showCrosshair = playing && !this.buildMode.active && p.alive && this.rig.buildTransition < 0.2;
-      this.hud.setCrosshair(window.innerWidth / 2, window.innerHeight / 2, showCrosshair);
-    } else {
-      this.hud.setCrosshair(this.input.mouseScreen.x, this.input.mouseScreen.y, playing && this.input.mouseInWindow);
-    }
+    this.hud.setCrosshair(this.input.mouseScreen.x, this.input.mouseScreen.y, playing && this.input.mouseInWindow);
 
     const bm = this.buildMode;
     this.buildUI.setBuild(playing && bm.active, bm.tab, bm.selected, bm.placement, this.input.mouseScreen.x, this.input.mouseScreen.y);

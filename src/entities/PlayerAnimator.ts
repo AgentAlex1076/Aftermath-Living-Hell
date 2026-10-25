@@ -13,22 +13,22 @@ interface ArmPose {
   twist: number;
 }
 
-const RELAX: ArmPose = { armLx: 0.05, armLz: -0.12, armRx: 0.05, armRz: 0.12, foreLx: -0.3, foreRx: -0.3, twist: 0 };
-const READY: ArmPose = { ...RELAX, armRx: -0.35, armRz: 0.18, foreRx: -1.0 };
-const AIM: ArmPose = { armLx: -1.05, armLz: -0.18, armRx: -1.15, armRz: 0.06, foreLx: -0.2, foreRx: -0.12, twist: 0.08 };
-const SPRINT: ArmPose = { armLx: -0.35, armLz: -0.25, armRx: -0.35, armRz: 0.25, foreLx: -1.25, foreRx: -1.1, twist: 0 };
+const RELAX: ArmPose = { armLx: 0.05, armLz: 0.14, armRx: 0.05, armRz: -0.14, foreLx: -0.28, foreRx: -0.28, twist: 0 };
+const READY: ArmPose = { ...RELAX, armRx: -0.32, armRz: -0.16, foreRx: -0.95 };
+const AIM: ArmPose = { armLx: -1.02, armLz: 0.12, armRx: -1.12, armRz: -0.06, foreLx: -0.2, foreRx: -0.12, twist: 0.08 };
+const SPRINT: ArmPose = { armLx: -0.32, armLz: 0.18, armRx: -0.32, armRz: -0.18, foreLx: -1.2, foreRx: -1.1, twist: 0 };
 
 /** Keyframes as [progress, pose overrides]; the swing hits at ~0.45 (see SWING_IMPACT). */
 const CHOP: [number, Partial<ArmPose>][] = [
   [0, {}],
-  [0.36, { armRx: -2.55, armRz: 0.32, foreRx: -1.35, armLx: -0.5, foreLx: -0.9, twist: -0.35 }],
-  [0.47, { armRx: -0.85, armRz: 0.1, foreRx: -0.1, armLx: -0.3, foreLx: -0.6, twist: 0.3 }],
+  [0.36, { armRx: -2.55, armRz: -0.25, foreRx: -1.35, armLx: -0.5, armLz: 0.18, foreLx: -0.9, twist: -0.35 }],
+  [0.47, { armRx: -0.85, armRz: -0.1, foreRx: -0.1, armLx: -0.3, armLz: 0.14, foreLx: -0.6, twist: 0.3 }],
   [1, {}],
 ];
 const PUNCH: [number, Partial<ArmPose>][] = [
   [0, {}],
-  [0.3, { armRx: -0.9, armRz: 0.5, foreRx: -1.9, armLx: -0.8, foreLx: -1.6, twist: -0.4 }],
-  [0.45, { armRx: -1.55, armRz: 0.02, foreRx: -0.05, armLx: -0.4, foreLx: -1.4, twist: 0.35 }],
+  [0.3, { armRx: -0.9, armRz: -0.38, foreRx: -1.9, armLx: -0.8, armLz: 0.22, foreLx: -1.6, twist: -0.4 }],
+  [0.45, { armRx: -1.55, armRz: -0.05, foreRx: -0.05, armLx: -0.4, armLz: 0.16, foreLx: -1.4, twist: 0.35 }],
   [1, {}],
 ];
 
@@ -71,21 +71,6 @@ export class PlayerAnimator {
       });
       this.n.handR.add(model);
     }
-  }
-
-  setFirstPersonMode(isFirstPerson: boolean): void {
-    if (this.n.head) this.n.head.visible = !isFirstPerson;
-    if (this.n.armL) this.n.armL.visible = !isFirstPerson;
-    if (this.n.armR) this.n.armR.visible = !isFirstPerson;
-  }
-
-  setArmsVisible(visible: boolean): void {
-    if (this.n.armL) this.n.armL.visible = visible;
-    if (this.n.armR) this.n.armR.visible = visible;
-  }
-
-  setHeadVisible(visible: boolean): void {
-    if (this.n.head) this.n.head.visible = visible;
   }
 
   update(dt: number, player: Player, facing: number): void {

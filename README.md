@@ -16,8 +16,8 @@ npm run dev        # then open http://localhost:5173
 
 | Key | Action |
 | --- | --- |
-| WASD | Move (relative to looking direction in First Person, screen in Top-Down) |
-| Mouse | Look / Aim (Pointer locked in First Person mode) |
+| WASD | Move (screen-relative) |
+| Mouse | Aim |
 | Left mouse (hold) | Fire a gun, melee mutants, swing the held tool / fists, or use a consumable |
 | Right mouse (hold) | Aim (tighter spread, slower move) |
 | R | Reload / clear a jam (or upgrade a piece with the hammer) |
@@ -26,16 +26,14 @@ npm run dev        # then open http://localhost:5173
 | Shift | Sprint (uses stamina) |
 | Space | Dodge roll (uses stamina) |
 | E | Interact / search containers / use the Crafting Table, Oven or Gun Bench / open doors and storage boxes |
-| B | Build mode: Q switches Structure / Traps / Power, 1–7 pick a piece, left mouse places, R rotates, B or Esc exits (smoothly swoops to overhead view in First Person) |
+| B | Build mode: Q switches Structure / Traps / Power, 1–7 pick a piece, left mouse places, R rotates, B or Esc exits |
 | E on a turret / generator / trap | Load a crafted gun, ammo, wood or chemicals |
 | Hammer equipped | Left mouse repairs the piece under the cursor, R upgrades it, hold X to demolish |
-| Mouse wheel | Zoom (Top-Down mode) |
+| Mouse wheel | Zoom camera |
 | Esc | Pause (volume slider and mute are on the pause screen) |
 | M | Mute / unmute |
 | F1 or ` | Debug panel |
 | H | Hide the controls card |
-
-You can choose between **First Person (FPS)** and **Top-Down (Classic)** on the start screen before beginning your run.
 
 Every run gets a random world. Add `?seed=1234` to the URL to replay a specific one
 (the seed is shown on the pause and death screens, and on every row of The Ledger).

@@ -15,14 +15,12 @@ export function setScreenHidden(root: HTMLElement, hidden: boolean): void {
 export class StartScreen {
   private readonly root: HTMLDivElement;
   private started = false;
-  private selectedPerspective: 'first-person' | 'third-person' =
-    (localStorage.getItem('aftermath_perspective') as 'first-person' | 'third-person') || 'first-person';
 
   constructor(
     parent: HTMLElement,
     meta: Meta,
     handlers: {
-      onStart: (perspective: 'first-person' | 'third-person') => void;
+      onStart: () => void;
       onCodex: () => void;
       onLedger: () => void;
     },
@@ -53,25 +51,6 @@ export class StartScreen {
           and survive whatever crawls out of the fog.
         </p>
         ${record}
-        <div class="perspective-picker acid-target" style="--acid-delay: 0.22s">
-          <div class="picker-label">PERSPECTIVE</div>
-          <div class="picker-group">
-            <button class="picker-btn ${this.selectedPerspective === 'first-person' ? 'active' : ''}" type="button" data-val="first-person">
-              <span class="p-radio"></span>
-              <span class="p-info">
-                <span class="p-title">FIRST PERSON</span>
-                <span class="p-sub">Immersive FPS · Pointer Lock</span>
-              </span>
-            </button>
-            <button class="picker-btn ${this.selectedPerspective === 'third-person' ? 'active' : ''}" type="button" data-val="third-person">
-              <span class="p-radio"></span>
-              <span class="p-info">
-                <span class="p-title">TOP DOWN</span>
-                <span class="p-sub">Classic 3/4 Isometric View</span>
-              </span>
-            </button>
-          </div>
-        </div>
         <button class="btn play-btn" type="button" data-a="start">
           <span class="btn-label acid-target" style="--acid-delay: 0.03s">ENTER THE WASTELAND</span>
         </button>
@@ -83,25 +62,13 @@ export class StartScreen {
     `;
     parent.appendChild(this.root);
 
-    const pickerButtons = this.root.querySelectorAll<HTMLButtonElement>('.picker-btn');
-    pickerButtons.forEach((pb) => {
-      pb.addEventListener('click', () => {
-        if (this.started) return;
-        const val = pb.dataset.val as 'first-person' | 'third-person';
-        if (!val) return;
-        this.selectedPerspective = val;
-        localStorage.setItem('aftermath_perspective', val);
-        pickerButtons.forEach((btn) => btn.classList.toggle('active', btn === pb));
-      });
-    });
-
     const btn = q(this.root, '.play-btn');
     btn.addEventListener('click', () => {
       if (this.started) return;
       this.started = true;
       btn.blur();
       this.root.inert = true;
-      this.playIntroTransition(btn, () => handlers.onStart(this.selectedPerspective));
+      this.playIntroTransition(btn, () => handlers.onStart());
     });
     q(this.root, '[data-a="codex"]').addEventListener('click', handlers.onCodex);
     q(this.root, '[data-a="ledger"]').addEventListener('click', handlers.onLedger);

@@ -10,14 +10,14 @@ interface MatDef {
 }
 
 const DEFS = {
-  hazmat: { color: '#d9a21c', roughness: 0.55 },
-  hazmatShade: { color: '#b07f12', roughness: 0.6 },
-  rubber: { color: '#1d1d1f', roughness: 0.85 },
-  tape: { color: '#2a2a2c', roughness: 0.7 },
-  maskBody: { color: '#34383b', roughness: 0.55, metalness: 0.15 },
+  hazmat: { color: '#f6d33c', roughness: 0.56 },
+  hazmatShade: { color: '#d4af28', roughness: 0.64 },
+  rubber: { color: '#2b2f32', roughness: 0.68 },
+  tape: { color: '#45494d', roughness: 0.62 },
+  maskBody: { color: '#3f433e', roughness: 0.56, metalness: 0.12 },
   lens: { color: '#9cc77a', roughness: 0.12, metalness: 0.3, emissive: '#4f7a22', emissiveIntensity: 0.9 },
-  filter: { color: '#5a5f61', roughness: 0.4, metalness: 0.6 },
-  tank: { color: '#7d837c', roughness: 0.45, metalness: 0.55 },
+  filter: { color: '#4a4e48', roughness: 0.52, metalness: 0.25 },
+  tank: { color: '#e0a41d', roughness: 0.55, metalness: 0.08 },
   gunMetal: { color: '#2c2f31', roughness: 0.42, metalness: 0.7 },
   gunGrip: { color: '#3b2f25', roughness: 0.8 },
 
