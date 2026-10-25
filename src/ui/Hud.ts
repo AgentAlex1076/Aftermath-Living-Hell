@@ -1,4 +1,5 @@
 import { events, type ToastTone } from '../core/EventBus';
+import { bossFor, ENEMIES } from '../data/enemies';
 import { el, q } from './dom';
 
 const TOAST_LIFETIME_MS = 3200;
@@ -38,14 +39,20 @@ export class Hud {
   private readonly crosshair: HTMLElement;
   private lastPrompt = '';
   private lastZoneInside: boolean | null = null;
+  private readonly ammoChip: HTMLElement;
+  private lastAmmo = '';
+  private readonly bossBar: HTMLElement;
+  private readonly bossName: HTMLElement;
+  private readonly bossFill: HTMLElement;
+  private lastBoss: string | null = null;
 
   constructor(parent: HTMLElement) {
     this.root = el('div', 'hud');
     this.root.innerHTML = `
-      <div class="vignette"></div>
       <div class="gas-overlay"></div>
       <div class="danger-pulse"></div>
-      <div class="build-tag">AFTERMATH // BUILD 0.5 — RAIDS</div>
+      <div class="build-tag">AFTERMATH // BUILD 1.0 — LIVING HELL</div>
+      <div class="boss-bar"><span class="boss-name"></span><div class="boss-track"><div class="boss-fill"></div></div></div>
       <div class="gas-warning"><span class="gas-icon"></span><span class="gas-text">TOXIC GAS</span></div>
       <div class="zone-chip" data-state="inside">
         <span class="zone-icon"></span><span class="zone-text">HOME ZONE</span><span class="zone-dist"></span>
@@ -62,6 +69,11 @@ export class Hud {
         <div class="bar short bar-stamina"><div class="bar-fill"></div><span class="bar-label">STAMINA</span><span class="bar-value">100</span></div>
       </div>
       <div class="prompt"><span class="key">E</span><span class="prompt-text"></span></div>
+      <div class="ammo-chip">
+        <span class="ammo-mag">0</span><span class="ammo-sep">/</span><span class="ammo-pack">0</span>
+        <span class="ammo-mode">SEMI</span>
+        <span class="ammo-bar"><span></span></span>
+      </div>
       <div class="work-chips">
         <div class="work-chip craft-chip"><span class="wc-icon"></span><span class="wc-bar"><span></span></span><span class="wc-text"></span></div>
         <div class="work-chip oven-chip"><span class="wc-flame"></span><span class="wc-text"></span></div>
@@ -72,16 +84,19 @@ export class Hud {
         <div class="help-grid">
           <kbd>WASD</kbd><span>Move</span>
           <kbd>MOUSE</kbd><span>Aim</span>
-          <kbd>LMB</kbd><span>Melee / gather / use item</span>
+          <kbd>LMB</kbd><span>Fire / melee / gather / use</span>
+          <kbd>RMB</kbd><span>Aim (tighter spread)</span>
+          <kbd>R</kbd><span>Reload / clear jam</span>
           <kbd>1 – 6</kbd><span>Hotbar</span>
           <kbd>I / TAB</kbd><span>Backpack</span>
           <kbd>SHIFT</kbd><span>Sprint</span>
           <kbd>SPACE</kbd><span>Dodge roll</span>
           <kbd>E</kbd><span>Interact / search</span>
-          <kbd>B</kbd><span>Build mode</span>
+          <kbd>B</kbd><span>Build mode · Q switches tabs</span>
           <kbd>HAMMER</kbd><span>LMB fix · R upgrade · hold X scrap</span>
           <kbd>WHEEL</kbd><span>Zoom</span>
           <kbd>ESC</kbd><span>Pause</span>
+          <kbd>M</kbd><span>Mute sound</span>
           <kbd>F1 / \`</kbd><span>Debug panel</span>
           <kbd>H</kbd><span>Hide manual</span>
         </div>
@@ -116,6 +131,10 @@ export class Hud {
     this.toasts = q(this.root, '.toasts');
     this.help = q(this.root, '.help');
     this.crosshair = q(this.root, '.crosshair');
+    this.ammoChip = q(this.root, '.ammo-chip');
+    this.bossBar = q(this.root, '.boss-bar');
+    this.bossName = q(this.root, '.boss-name');
+    this.bossFill = q(this.root, '.boss-fill');
 
     events.on('toast', ({ text, tone }) => this.toast(text, tone));
     events.on('raid:warning', ({ seconds }) => this.splash(
@@ -123,11 +142,10 @@ export class Hud {
       seconds >= 60 ? 'GET HOME' : seconds >= 30 ? "THEY'RE CLOSE" : 'HOLD THE HUT',
       'warn',
     ));
-    events.on('raid:start', ({ raid }) => this.splash(
-      `RAID ${raid}`,
-      raid % 5 === 0 ? 'THE CHEMIST' : 'THEY ARE HERE',
-      'danger',
-    ));
+    events.on('raid:start', ({ raid }) => {
+      const boss = bossFor(raid);
+      this.splash(`RAID ${raid}`, boss ? ENEMIES[boss.id].title : 'THEY ARE HERE', 'danger');
+    });
     events.on('raid:end', ({ raid }) => this.splash('CLEAR', `RAID ${raid} OVER`, 'info'));
     events.on('raid:penalty', ({ reason }) => this.splash(
       'CAUGHT OUTSIDE',
@@ -138,6 +156,17 @@ export class Hud {
 
   setVisible(visible: boolean): void {
     this.root.classList.toggle('visible', visible);
+  }
+
+  /** Boss health across the top; `name` null hides it. */
+  setBoss(name: string | null, frac: number, enraged: boolean): void {
+    if (name !== this.lastBoss) {
+      this.lastBoss = name;
+      this.bossBar.classList.toggle('on', !!name);
+      if (name) this.bossName.textContent = name.toUpperCase();
+    }
+    this.bossBar.classList.toggle('enraged', enraged);
+    this.bossFill.style.transform = `scaleX(${Math.max(0, frac).toFixed(3)})`;
   }
 
   setHealth(value: number, max: number): void {
@@ -231,6 +260,20 @@ export class Hud {
 
   toggleHelp(): void {
     this.help.classList.toggle('hidden');
+  }
+
+  setAmmo(on: boolean, loaded: number, mag: number, reserve: number, mode: string, jammed: boolean, reload: number): void {
+    const key = `${on}|${loaded}|${mag}|${reserve}|${mode}|${jammed}`;
+    if (key !== this.lastAmmo) {
+      this.lastAmmo = key;
+      this.ammoChip.classList.toggle('on', on);
+      this.ammoChip.classList.toggle('empty', on && loaded <= 0);
+      this.ammoChip.classList.toggle('jammed', jammed);
+      q(this.ammoChip, '.ammo-mag').textContent = jammed ? 'JAM' : String(loaded);
+      q(this.ammoChip, '.ammo-pack').textContent = String(reserve);
+      q(this.ammoChip, '.ammo-mode').textContent = jammed ? 'HIT R' : mode.toUpperCase();
+    }
+    q(this.ammoChip, '.ammo-bar span').style.transform = `scaleX(${on && reload > 0 && reload < 1 ? reload : 0})`;
   }
 
   setCrosshair(x: number, y: number, visible: boolean): void {

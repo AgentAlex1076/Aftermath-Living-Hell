@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { CONFIG } from '../data/config';
 import { events } from '../core/EventBus';
+import { sfx } from '../audio/AudioEngine';
 import { ITEMS, type ItemDef, type ItemId } from '../data/items';
 import type { ItemAmount } from '../data/loot';
 import type { Player } from '../entities/Player';
@@ -10,6 +11,10 @@ import type { ContainerInstance, World } from '../world/World';
 import type { Inventory } from './Inventory';
 
 const TOOL_NAME = { axe: 'HATCHET', pickaxe: 'PICKAXE', crowbar: 'CROWBAR', hammer: 'HAMMER' } as const;
+const NODE_SOUND: Record<string, string> = {
+  deadTree: 'hit.wood', rock: 'hit.stone', rubble: 'hit.stone', scrapPile: 'hit.metal', car: 'hit.metal',
+  barrel: 'hit.metal', toxicBarrel: 'hit.metal', carcass: 'hit.flesh',
+};
 const _p = new THREE.Vector3();
 
 /** Swinging at resource nodes, searching containers and using consumables. */
@@ -39,6 +44,7 @@ export class Gathering {
 
     if (fireHeld && !this.player.swinging && this.player.state === 'normal') {
       const st = this.inv.selectedStack;
+      if (st?.gun) return;
       const def: ItemDef | null = st ? ITEMS[st.item] : null;
       if (def?.consumable) {
         if (this.useCooldown <= 0) {
@@ -47,7 +53,7 @@ export class Gathering {
         }
       } else {
         const tool = def?.tool ?? null;
-        this.player.startSwing(tool ? tool.swingTime : CONFIG.gathering.handSwingTime, !!tool);
+        if (this.player.startSwing(tool ? tool.swingTime : CONFIG.gathering.handSwingTime, !!tool)) sfx('swing', { pitch: tool ? 0.85 : 1.15 });
       }
     }
 
@@ -80,6 +86,8 @@ export class Gathering {
     }
 
     const { gained, destroyed } = this.world.damageNode(node, power, p.position.x, p.position.z);
+    sfx(NODE_SOUND[def.id] ?? 'hit.stone', { x: node.x, z: node.z, pitch: destroyed ? 0.8 : 0.92 + Math.random() * 0.16 });
+    if (destroyed) sfx('build.break', { x: node.x, z: node.z, param: def.tool === 'pickaxe' && def.id !== 'rock' && def.id !== 'rubble' ? 1 : 0, volume: 0.7 });
     const dx = node.x - p.position.x;
     const dz = node.z - p.position.z;
     const d = Math.hypot(dx, dz) || 1;
@@ -88,7 +96,10 @@ export class Gathering {
     if (tool && tool.kind !== def.tool) this.floaters.spawn(_p.clone().setY(0.6), 'WRONG TOOL', 'warn');
     events.emit('camera:shake', { amount: destroyed ? 0.28 : 0.1 });
     if (destroyed) this.floaters.spawn(_p.clone().setY(1.9), def.toxic ? 'SPLOOSH!' : 'KRAKA-DOOM!', 'word', '#f2b705', 0.08);
-    if (def.toxic) events.emit('toast', { text: 'Toxic gas vented. Back off or burn filter.', tone: 'toxic' });
+    if (def.toxic) {
+      sfx('gas.burst', { x: node.x, z: node.z, volume: destroyed ? 1 : 0.5 });
+      events.emit('toast', { text: 'Toxic gas vented. Back off or burn filter.', tone: 'toxic' });
+    }
 
     this.give(gained, _p);
   }
@@ -101,6 +112,7 @@ export class Gathering {
       const got = a.qty - left;
       if (got > 0) {
         const def: ItemDef = ITEMS[a.item];
+        sfx('pickup', { delay: 0.05 + i * 0.12, pitch: 1 + i * 0.08 });
         this.floaters.spawn(at.clone().setY(1.0), `+${got} ${def.name.toUpperCase()}`, 'gain', def.color, 0.05 + i * 0.12, i);
         if (def.kind === 'resource') this.gathered += got;
       }
@@ -129,6 +141,7 @@ export class Gathering {
     c.object.userData.searchedOnce = true;
     if (firstTime) this.searched++;
     this.floaters.spawn(at.clone().setY(1.9), c.def.requires ? 'KRRRK!' : 'RUMMAGE', 'word');
+    sfx(c.def.requires ? 'hit.metal' : 'rummage', { x: c.x, z: c.z });
     const left = this.give(contents, at);
     this.world.setContents(c, left);
   }
@@ -163,6 +176,7 @@ export class Gathering {
     if (c.heal && c.heal > 0) p.heal(c.heal);
     if (c.heal && c.heal < 0) p.damage(-c.heal);
     this.inv.removeAt(index, 1);
+    sfx(c.filter ? 'filter' : c.hunger ? 'eat' : 'rummage');
     events.emit('toast', { text: c.message, tone: c.heal && c.heal < 0 ? 'danger' : c.filter ? 'toxic' : 'info' });
     this.floaters.spawn(p.position.clone().setY(2.1), c.filter ? 'SKRRT-CLICK' : c.heal && c.heal < 0 ? 'BLEGH!' : c.hunger ? 'CHOMP!' : 'GULP!', 'word', def.color);
   }

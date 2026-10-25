@@ -11,10 +11,12 @@ export type Action =
   | 'reload'
   | 'inventory'
   | 'build'
+  | 'buildTab'
   | 'demolish'
   | 'debug'
   | 'help'
   | 'pause'
+  | 'mute'
   | 'hotbar1'
   | 'hotbar2'
   | 'hotbar3'
@@ -40,11 +42,14 @@ const KEY_BINDINGS: Record<string, Action> = {
   KeyI: 'inventory',
   Tab: 'inventory',
   KeyB: 'build',
+  KeyQ: 'buildTab',
+  BracketLeft: 'buildTab',
   KeyX: 'demolish',
   F1: 'debug',
   Backquote: 'debug',
   KeyH: 'help',
   Escape: 'pause',
+  KeyM: 'mute',
   Digit1: 'hotbar1',
   Digit2: 'hotbar2',
   Digit3: 'hotbar3',
@@ -60,7 +65,7 @@ const MOUSE_BINDINGS: Record<number, Action> = {
 };
 
 /** Actions that should still register while gameplay input is disabled (menus, pause). */
-const ALWAYS_ON: ReadonlySet<Action> = new Set<Action>(['debug', 'pause', 'help', 'inventory']);
+const ALWAYS_ON: ReadonlySet<Action> = new Set<Action>(['debug', 'pause', 'help', 'inventory', 'mute']);
 
 /**
  * Keyboard + mouse state. "Pressed" edges are tracked twice: once for the fixed simulation

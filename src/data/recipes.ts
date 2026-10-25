@@ -47,6 +47,54 @@ export const RECIPES: readonly Recipe[] = [
     id: 'salvagedPickaxe', output: 'salvagedPickaxe', qty: 1, time: 14, station: 'workbench', category: 'tools',
     inputs: [{ item: 'metalPlate', qty: 5 }, { item: 'wood', qty: 15 }, { item: 'cloth', qty: 3 }],
   },
+  {
+    id: 'ammo', output: 'ammo', qty: 8, time: 3, station: 'hand', category: 'parts',
+    inputs: [{ item: 'gunpowder', qty: 2 }, { item: 'scrap', qty: 1 }],
+  },
+  {
+    id: 'rustedReceiver', output: 'rustedReceiver', qty: 1, time: 10, station: 'workbench', category: 'parts',
+    inputs: [{ item: 'scrap', qty: 20 }, { item: 'metalPlate', qty: 1 }],
+  },
+  {
+    id: 'rustedBarrel', output: 'rustedBarrel', qty: 1, time: 8, station: 'workbench', category: 'parts',
+    inputs: [{ item: 'scrap', qty: 12 }],
+  },
+  {
+    id: 'woodGrip', output: 'woodGrip', qty: 1, time: 5, station: 'workbench', category: 'parts',
+    inputs: [{ item: 'wood', qty: 8 }, { item: 'cloth', qty: 2 }],
+  },
+  {
+    id: 'woodHandle', output: 'woodHandle', qty: 1, time: 4, station: 'workbench', category: 'parts',
+    inputs: [{ item: 'wood', qty: 6 }],
+  },
+  {
+    id: 'woodStock', output: 'woodStock', qty: 1, time: 7, station: 'workbench', category: 'parts',
+    inputs: [{ item: 'wood', qty: 14 }, { item: 'scrap', qty: 4 }],
+  },
+  {
+    id: 'rustedTrigger', output: 'rustedTrigger', qty: 1, time: 5, station: 'workbench', category: 'parts',
+    inputs: [{ item: 'scrap', qty: 6 }, { item: 'electronics', qty: 1 }],
+  },
+  {
+    id: 'stickMag', output: 'stickMag', qty: 1, time: 6, station: 'workbench', category: 'parts',
+    inputs: [{ item: 'scrap', qty: 10 }, { item: 'metalPlate', qty: 1 }],
+  },
+  {
+    id: 'ironSight', output: 'ironSight', qty: 1, time: 4, station: 'workbench', category: 'parts',
+    inputs: [{ item: 'scrap', qty: 5 }],
+  },
+  {
+    id: 'rustedMuzzle', output: 'rustedMuzzle', qty: 1, time: 5, station: 'workbench', category: 'parts',
+    inputs: [{ item: 'scrap', qty: 8 }],
+  },
+  {
+    id: 'rustedRail', output: 'rustedRail', qty: 1, time: 6, station: 'workbench', category: 'parts',
+    inputs: [{ item: 'scrap', qty: 10 }],
+  },
+  {
+    id: 'rustedConverter', output: 'rustedConverter', qty: 1, time: 8, station: 'workbench', category: 'parts',
+    inputs: [{ item: 'electronics', qty: 2 }, { item: 'scrap', qty: 6 }],
+  },
 ];
 
 /** Things the Oven makes. Wood is the fuel; every couple of logs burned leaves charcoal behind. */

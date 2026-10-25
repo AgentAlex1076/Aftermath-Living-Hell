@@ -15,6 +15,7 @@ interface ArmPose {
 
 const RELAX: ArmPose = { armLx: 0.05, armLz: -0.12, armRx: 0.05, armRz: 0.12, foreLx: -0.3, foreRx: -0.3, twist: 0 };
 const READY: ArmPose = { ...RELAX, armRx: -0.35, armRz: 0.18, foreRx: -1.0 };
+const AIM: ArmPose = { armLx: -1.05, armLz: -0.18, armRx: -1.15, armRz: 0.06, foreLx: -0.2, foreRx: -0.12, twist: 0.08 };
 const SPRINT: ArmPose = { armLx: -0.35, armLz: -0.25, armRx: -0.35, armRz: 0.25, foreLx: -1.25, foreRx: -1.1, twist: 0 };
 
 /** Keyframes as [progress, pose overrides]; the swing hits at ~0.45 (see SWING_IMPACT). */
@@ -46,6 +47,8 @@ export class PlayerAnimator {
   private dirX = 0;
   private dirZ = 1;
   private held: THREE.Object3D | null = null;
+  private heldKind: 'none' | 'tool' | 'gun' = 'none';
+  private gunBlend = 0;
 
   constructor(root: THREE.Object3D) {
     const names = ['rollPivot', 'body', 'hips', 'head', 'armL', 'armR', 'forearmL', 'forearmR', 'handR', 'legL', 'legR', 'shinL', 'shinR'];
@@ -58,9 +61,10 @@ export class PlayerAnimator {
   }
 
   /** Puts a model in the right hand (or empties it). */
-  setHeld(model: THREE.Object3D | null): void {
+  setHeld(model: THREE.Object3D | null, kind: 'tool' | 'gun' = 'tool'): void {
     if (this.held) this.held.removeFromParent();
     this.held = model;
+    this.heldKind = model ? kind : 'none';
     if (model) {
       model.traverse((o) => {
         if (o instanceof THREE.Mesh) o.castShadow = true;
@@ -88,7 +92,8 @@ export class PlayerAnimator {
     const dodging = player.state === 'dodging';
     this.moveBlend = damp(this.moveBlend, dodging ? 0 : clamp(speed / CONFIG.player.walkSpeed, 0, 1.25), 10, dt);
     this.sprintBlend = damp(this.sprintBlend, player.sprinting ? 1 : 0, 8, dt);
-    this.armedBlend = damp(this.armedBlend, this.held ? 1 : 0, 10, dt);
+    this.armedBlend = damp(this.armedBlend, this.heldKind === 'tool' ? 1 : 0, 10, dt);
+    this.gunBlend = damp(this.gunBlend, this.heldKind === 'gun' ? 1 : 0, 10, dt);
     this.phase = (this.phase + dt * speed * 2.5) % TAU;
 
     const blend = Math.min(this.moveBlend, 1);
@@ -103,6 +108,11 @@ export class PlayerAnimator {
 
     // Base arm pose: relaxed or tool-ready, blended toward the sprint pump.
     blendPose(_pose, RELAX, READY, this.armedBlend, ['armRx', 'armRz', 'foreRx']);
+    if (this.gunBlend > 0.01) {
+      for (const k of Object.keys(_pose) as (keyof ArmPose)[]) _pose[k] = lerp(_pose[k], AIM[k], this.gunBlend);
+      _pose.armRx -= player.kick * 0.35;
+      _pose.armLx -= player.kick * 0.2;
+    }
     const armSwing = Math.sin(this.phase) * 0.55 * blend;
     _pose.armLx += armSwing * this.dirZ;
     _pose.armRx -= armSwing * this.dirZ * (1 - this.armedBlend * 0.7);

@@ -7,6 +7,7 @@ const gasVertex = /* glsl */ `
   #include <fog_pars_vertex>
   uniform float uTime;
   uniform vec3 uPlayer;
+  uniform vec2 uPocket;
   varying vec2 vUv;
   varying float vAlpha;
   varying float vSeed;
@@ -15,13 +16,14 @@ const gasVertex = /* glsl */ `
     vSeed = instanceColor.g;
     vec4 center = instanceMatrix * vec4(0.0, 0.0, 0.0, 1.0);
     // Clear a pocket around the player so the hazmat suit stays readable inside clouds.
-    vAlpha = instanceColor.r * smoothstep(2.5, 7.0, distance(center.xz, uPlayer.xz));
+    vAlpha = instanceColor.r * smoothstep(uPocket.x, uPocket.y, distance(center.xz, uPlayer.xz));
     float s = length(instanceMatrix[0].xyz);
     // Ground-parallel sheets: camera-facing billboards would slice into the ground with hard edges.
     float ang = vSeed * 6.2831 + uTime * 0.07 * (vSeed - 0.5);
     vec2 p = mat2(cos(ang), -sin(ang), sin(ang), cos(ang)) * position.xy * s;
     vec3 drift = vec3(sin(uTime * 0.11 + vSeed * 9.0), sin(uTime * 0.35 + vSeed * 20.0) * 0.08, cos(uTime * 0.09 + vSeed * 7.0)) * 0.6;
-    vec4 mvPosition = modelViewMatrix * vec4(center.xyz + vec3(p.x, 0.0, p.y) + drift, 1.0);
+    // (x, -y) keeps the plane's front face pointing up at the camera.
+    vec4 mvPosition = modelViewMatrix * vec4(center.xyz + vec3(p.x, 0.0, -p.y) + drift, 1.0);
     gl_Position = projectionMatrix * mvPosition;
     #include <fog_vertex>
   }
@@ -57,26 +59,33 @@ const gasFragment = /* glsl */ `
 `;
 
 let gasMaterial: THREE.ShaderMaterial | null = null;
-const gasGeometry = new THREE.PlaneGeometry(1, 1);
+export const gasGeometry = new THREE.PlaneGeometry(1, 1);
+
+/**
+ * Drifting ground-parallel gas sheets for an InstancedMesh. Per instance, `instanceColor.r` is
+ * opacity and `.g` a random seed. `pocket` is the inner/outer radius of the clear area around the player.
+ */
+export function createGasMaterial(colorA: string, colorB: string, pocket: [number, number]): THREE.ShaderMaterial {
+  return new THREE.ShaderMaterial({
+    uniforms: {
+      ...THREE.UniformsUtils.clone(THREE.UniformsLib.fog),
+      uTime: { value: 0 },
+      uPlayer: { value: new THREE.Vector3() },
+      uPocket: { value: new THREE.Vector2(...pocket) },
+      uOpacity: { value: 1 },
+      uColorA: { value: new THREE.Color(colorA) },
+      uColorB: { value: new THREE.Color(colorB) },
+    },
+    vertexShader: gasVertex,
+    fragmentShader: gasFragment,
+    transparent: true,
+    depthWrite: false,
+    fog: true,
+  });
+}
 
 export function getGasMaterial(): THREE.ShaderMaterial {
-  if (!gasMaterial) {
-    gasMaterial = new THREE.ShaderMaterial({
-      uniforms: {
-        ...THREE.UniformsUtils.clone(THREE.UniformsLib.fog),
-        uTime: { value: 0 },
-        uPlayer: { value: new THREE.Vector3() },
-        uOpacity: { value: 1 },
-        uColorA: { value: new THREE.Color('#6f8f2a') },
-        uColorB: { value: new THREE.Color('#a8d23a') },
-      },
-      vertexShader: gasVertex,
-      fragmentShader: gasFragment,
-      transparent: true,
-      depthWrite: false,
-      fog: true,
-    });
-  }
+  gasMaterial ??= createGasMaterial('#6f8f2a', '#a8d23a', [2.5, 7]);
   return gasMaterial;
 }
 

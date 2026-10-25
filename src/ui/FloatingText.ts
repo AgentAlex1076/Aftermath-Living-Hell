@@ -26,12 +26,14 @@ export class FloatingText {
     parent.appendChild(this.root);
   }
 
-  spawn(pos: THREE.Vector3, text: string, kind: FloatKind, color?: string, delay = 0, stack = 0): void {
+  /** `power` (damage dealt) scales comic words up: a shotgun blast shouts louder than a punch. */
+  spawn(pos: THREE.Vector3, text: string, kind: FloatKind, color?: string, delay = 0, stack = 0, power = 0): void {
     const node = el('div', `floater floater-${kind}`);
     const inner = el('span');
     inner.textContent = text;
     node.appendChild(inner);
     if (color) node.style.setProperty('--c', color);
+    if (power > 0) node.style.setProperty('--k', (0.8 + Math.min(power, 63) / 45).toFixed(2));
     node.style.setProperty('--r', `${(Math.random() - 0.5) * (kind === 'word' ? 18 : 6)}deg`);
     inner.style.animationDelay = `${delay}s`;
     node.style.opacity = '0';

@@ -66,6 +66,11 @@ const DEFS = {
   cooked: { color: '#6b3a1c', roughness: 0.7, flatShading: true },
   char: { color: '#3b3734', roughness: 1, flatShading: true },
   ash: { color: '#8e8a84', roughness: 1, flatShading: true },
+  hidePale: { color: '#8f968e', roughness: 0.85, flatShading: true },
+  hideSick: { color: '#7d7a48', roughness: 0.9, flatShading: true },
+  gown: { color: '#6f807c', roughness: 1, flatShading: true },
+  acidSac: { color: '#a6d63a', roughness: 0.25, emissive: '#5a9a12', emissiveIntensity: 1.3 },
+  veinGlow: { color: '#ff4a2a', roughness: 0.4, emissive: '#ff2a10', emissiveIntensity: 2.0 },
 
   toxicGlow: { color: '#79ff3a', roughness: 0.3, emissive: '#5dff1a', emissiveIntensity: 2.2 },
   ember: { color: '#ff7a2a', roughness: 0.5, emissive: '#ff4d0d', emissiveIntensity: 2.6 },

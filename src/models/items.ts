@@ -178,3 +178,5 @@ export const ITEM_MODELS: Record<string, () => THREE.Object3D> = {
       box(0.05, 0.02, 0.025, mat('iron'), { pos: [0.02, -0.12, 0], rot: [0, 0, 0.4] }),
     ),
 };
+
+export { buildAmmoItem, buildCraftedGunItem } from './guns';

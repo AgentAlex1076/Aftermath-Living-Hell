@@ -73,12 +73,13 @@ export interface FloorRect {
   maxZ: number;
 }
 
-interface Puff {
+export interface Puff {
   x: number;
   z: number;
   r: number;
   life: number;
   maxLife: number;
+  seed: number;
 }
 
 export interface WorldContext {
@@ -183,7 +184,12 @@ export class World {
 
   /** A short-lived gas cloud, e.g. from cracking a chemical drum. */
   addPuff(x: number, z: number, r = 3.2, life = 6): void {
-    this.puffs.push({ x, z, r, life, maxLife: life });
+    this.puffs.push({ x, z, r, life, maxLife: life, seed: Math.random() });
+  }
+
+  /** Live gas puffs, for drawing them. */
+  get activePuffs(): readonly Puff[] {
+    return this.puffs;
   }
 
   findNodeInCone(pos: THREE.Vector3, facing: number, reach: number, coneDeg: number): NodeInstance | null {

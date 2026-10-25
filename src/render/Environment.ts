@@ -4,8 +4,13 @@ import { Rng } from '../core/random';
 
 const FOG_COLOR = new THREE.Color('#4e5752');
 const TOXIC_FOG_COLOR = new THREE.Color('#56692c');
+const RAIN_FOG_COLOR = new THREE.Color('#3f4a4e');
+const FLASH_COLOR = new THREE.Color('#aab4c8');
 const FOG_DENSITY = 0.019;
 const TOXIC_FOG_DENSITY = 0.028;
+const RAIN_FOG_DENSITY = 0.006;
+const SUN = 2.1;
+const SKY = 1.7;
 
 const ASH_COUNT = 1800;
 const ASH_BOX = { x: 70, y: 22, z: 70 };
@@ -18,8 +23,11 @@ export class Environment {
   private readonly sunOffset = new THREE.Vector3(-18, 34, 12);
   private readonly ash: THREE.Points;
   private readonly ashSpeeds: Float32Array;
+  private readonly hemi: THREE.HemisphereLight;
   private toxic = 0;
   private toxicTarget = 0;
+  private rain = 0;
+  private flash = 0;
   private time = 0;
 
   constructor(scene: THREE.Scene, seed: number) {
@@ -28,10 +36,10 @@ export class Environment {
     this.fog = new THREE.FogExp2(FOG_COLOR.clone(), FOG_DENSITY);
     scene.fog = this.fog;
 
-    const hemi = new THREE.HemisphereLight('#a3ada6', '#3b352b', 1.7);
-    scene.add(hemi);
+    this.hemi = new THREE.HemisphereLight('#a3ada6', '#3b352b', SKY);
+    scene.add(this.hemi);
 
-    this.sun = new THREE.DirectionalLight('#d2d8cb', 2.1);
+    this.sun = new THREE.DirectionalLight('#d2d8cb', SUN);
     this.sun.castShadow = true;
     this.sun.shadow.mapSize.set(2048, 2048);
     this.sun.shadow.radius = 3;
@@ -57,6 +65,12 @@ export class Environment {
     this.toxicTarget = Math.min(1, amount);
   }
 
+  /** Rain dims the sun and thickens the fog; `flash` is lightning (0..1). */
+  setWeather(rain: number, flash: number): void {
+    this.rain = rain;
+    this.flash = flash;
+  }
+
   update(dt: number, focus: THREE.Vector3): void {
     this.time += dt;
 
@@ -67,9 +81,12 @@ export class Environment {
     this.sun.position.set(fx + this.sunOffset.x, this.sunOffset.y, fz + this.sunOffset.z);
 
     this.toxic = damp(this.toxic, this.toxicTarget, 2.5, dt);
-    this.fog.color.copy(FOG_COLOR).lerp(TOXIC_FOG_COLOR, this.toxic);
-    this.fog.density = FOG_DENSITY + (TOXIC_FOG_DENSITY - FOG_DENSITY) * this.toxic;
+    this.fog.color.copy(FOG_COLOR).lerp(RAIN_FOG_COLOR, this.rain * 0.8).lerp(TOXIC_FOG_COLOR, this.toxic).lerp(FLASH_COLOR, this.flash * 0.5);
+    this.fog.density = FOG_DENSITY + (TOXIC_FOG_DENSITY - FOG_DENSITY) * this.toxic + RAIN_FOG_DENSITY * this.rain;
     this.background.copy(this.fog.color);
+    this.sun.intensity = SUN * (1 - this.rain * 0.45) + this.flash * 2.5;
+    this.hemi.intensity = SKY * (1 - this.rain * 0.2) + this.flash * 4;
+    (this.ash.material as THREE.PointsMaterial).opacity = 0.6 * (1 - this.rain * 0.85);
 
     this.updateAsh(dt, focus);
   }

@@ -203,11 +203,35 @@ Multiplayer, controller support, story campaign, mod support, online leaderboard
    teleports you to the hut; the wave still comes. Shamblers, crawlers, bloaters and brutes mix
    in; The Chemist shows up every 5th raid. Roamers wander outside the Home Zone between waves.
    Melee only until Phase 6. Stairs, roofs and gates stay deferred from Phase 4.
-6. Gun crafting: grid Gun Bench, placement rules, live stats, 3D preview, assembled gun.
-7. Defenses: turrets, traps, power.
-8. Permadeath + meta: death screen, score, saves, run history, Codex.
-9. Comic UI pass.
-10. Polish: post-processing, gas/fog effects, rain, audio, remaining enemies and bosses.
+6. Gun crafting: grid Gun Bench, placement rules, live stats, 3D preview, assembled gun. **(done — build 0.6)**
+   12×6 side-view bench in the hut. Parts must touch a receiver. Placement changes fire mode,
+   projectiles, recoil and whether a sight works. Take the assembled gun, shoot, reload, jam.
+   Rusted parts and scrap cartridges are craftable; better parts sit in lockers and on The Chemist.
+7. Defenses: turrets, traps, power. **(done — build 0.7)**
+   Build mode has Structure / Traps / Power tabs (Q). Sandbags, spikes, barbed wire,
+   mines, tripwire, gas traps and shotgun traps; a wood-burning generator with a
+   power radius; auto-turrets that mount a crafted gun; floodlights and flame vents.
+   Alarm bells, workbench tiers, water purifiers and the research table stay deferred.
+8. Permadeath + meta: death screen, score, saves, run history, Codex. **(done — build 0.8)**
+   Death is an issue cover: score (raids weighted, kills, bosses, a streak multiplier
+   at 5/10/15), kills by type, best gun, seed. localStorage keeps the high-score ledger,
+   the last 40 runs and a Codex of every mutant, gun part, buildable and recipe ever
+   seen. Nothing powerful carries over. Replay any run's seed from the ledger.
+9. Comic UI pass. **(done — build 0.9)**
+10. Polish: post-processing, gas/fog effects, rain, audio, remaining enemies and bosses. **(done — build 1.0)**
+   Bloom, a sickly split-tone grade, vignette, grain, a toxic tint in gas and red edges when hurt.
+   Seeded weather: clear spells, drizzle and storms with lightning and thunder; the ground darkens
+   and gets a sheen when wet. Gas puffs (bloaters, traps, drums, the Chemist) are now visible, plus
+   low ground mist. All audio is synthesized in `src/audio`: guns, hits, mutant voices, building,
+   UI, raid sirens and horn, wind, rain, the respirator, and an industrial track during raids.
+   M mutes; volume is on the pause screen. New mutants: Spitter (lobs acid, eats walls), Screamer
+   (frenzies the horde, calls more), Stalker (fades out in gas and breathes its own; powered
+   floodlights reveal it) and Climber (goes over walls). Boss raids alternate The Chemist and
+   Patient Zero (ground slam, splits into crawlers, enrages low), and each boss comes back with
+   +50% HP after both have appeared. Boss raids show a boss health bar.
+   Fixed along the way: upright mutants' legs were below the ground, gas clouds never rendered,
+   and enemy attacks landed on every tick of their swing instead of once.
+   Elite modifiers (armored, toxic, fast) are still unscheduled.
 
 ## Post-v1 ideas
 Not scheduled. Build the v1 phases so they don't block these.

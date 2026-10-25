@@ -145,4 +145,73 @@ export const CONFIG = {
   interact: {
     radius: 1.9,
   },
+
+  guns: {
+    cols: 12,
+    rows: 6,
+    maxPerCategory: 5,
+    /** World metres per bench cell when the assembled gun is built. */
+    cell: 0.085,
+    benchRange: 3.2,
+    /** Move-speed penalty is weight / (weight + this). */
+    weightSoft: 10,
+  },
+
+  combat: {
+    pool: 48,
+    radius: 0.07,
+    hitWords: ['BLAM!', 'KRAK!', 'POW!', 'BANG!'] as const,
+    aimSpread: 0.42,
+    aimMove: 0.72,
+    heatDecay: 0.35,
+    jamClearTime: 0.55,
+  },
+
+  defenses: {
+    /** How far a generator feeds powered pieces. */
+    powerRadius: 16,
+    /** Seconds of burn per log while something in range is drawing power. */
+    fuelBurn: 5,
+    spikeDps: 22,
+    spikeSlow: 0.55,
+    barbedDps: 14,
+    barbedSlow: 0.38,
+    mineArm: 1.15,
+    mineRadius: 3.4,
+    mineDamage: 90,
+    tripArm: 0.7,
+    tripWidth: 0.38,
+    tripRadius: 3.1,
+    tripDamage: 75,
+    gasArm: 0.85,
+    gasTrigger: 1.15,
+    gasR: 4.6,
+    gasLife: 8,
+    shotgunRange: 8,
+    shotgunCone: 0.62,
+    shotgunCooldown: 2.2,
+    shotgun: {
+      damage: 9,
+      fireRate: 1,
+      fireMode: 'semi' as const,
+      burstCount: 1,
+      projectiles: 8,
+      spread: 14,
+      recoil: 4,
+      range: 9,
+      velocity: 36,
+      magSize: 1,
+      reloadTime: 1,
+      weight: 0,
+      handling: 0,
+      heat: 0,
+      sway: 0,
+      ammoPerShot: 1,
+    },
+    turretTurn: 8,
+    flameRange: 6.4,
+    flameCone: 0.55,
+    flameDps: 32,
+    flameChemPerSecond: 0.4,
+  },
 } as const;

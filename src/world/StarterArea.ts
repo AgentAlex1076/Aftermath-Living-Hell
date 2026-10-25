@@ -19,6 +19,7 @@ export interface StarterAreaContext {
   seed: number;
   onUseWorkbench: () => void;
   onUseOven: () => void;
+  onUseGunBench: () => void;
 }
 
 export interface StarterArea {
@@ -27,6 +28,7 @@ export interface StarterArea {
   roof: Occluder;
   interior: { minX: number; maxX: number; minZ: number; maxZ: number };
   workbench: THREE.Vector3;
+  gunBench: THREE.Vector3;
   ovenLights: LightEmitter[];
 }
 
@@ -47,10 +49,12 @@ export function buildStarterArea(ctx: StarterAreaContext): StarterArea {
   const backZ = -HUT.depth / 2 + 0.55;
   world.spawnProp('station.craftingTable', -1.55, backZ, 0, seed());
   const ovenLights = world.spawnProp('station.oven', 1.75, backZ + 0.02, 0, seed()).lights;
+  world.spawnProp('station.gunBench', 0.15, backZ + 0.02, 0, seed());
   world.spawnProp('prop.mattress', -2.3, 0.85, 0.04, seed());
   world.spawnContainer('crate', 2.35, 1.55, 0.2, seed(), 'starter:hutCrate', null, STARTER_SUPPLIES);
 
   const workbench = new THREE.Vector3(-1.55, 0, backZ + 0.75);
+  const gunBench = new THREE.Vector3(0.15, 0, backZ + 0.75);
   ctx.interactions.add({
     id: 'craftingTable',
     label: 'Crafting Table',
@@ -66,6 +70,14 @@ export function buildStarterArea(ctx: StarterAreaContext): StarterArea {
     position: new THREE.Vector3(1.75, 0, backZ + 0.7),
     radius: 1.4,
     onInteract: ctx.onUseOven,
+  });
+  ctx.interactions.add({
+    id: 'gunBench',
+    label: 'Gun Bench',
+    verb: 'Build at',
+    position: gunBench,
+    radius: 1.5,
+    onInteract: ctx.onUseGunBench,
   });
   ctx.interactions.add({
     id: 'mattress',
@@ -109,6 +121,7 @@ export function buildStarterArea(ctx: StarterAreaContext): StarterArea {
     roof,
     interior: hut.userData.interior,
     workbench,
+    gunBench,
     ovenLights,
   };
 }

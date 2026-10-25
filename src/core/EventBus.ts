@@ -1,3 +1,6 @@
+import type { EnemyId } from '../data/enemies';
+import type { BestGun } from '../data/score';
+
 export type ToastTone = 'info' | 'warn' | 'danger' | 'toxic';
 
 export interface GameEvents {
@@ -10,6 +13,10 @@ export interface GameEvents {
   'raid:start': { raid: number };
   'raid:end': { raid: number };
   'raid:penalty': { reason: 'timer' | 'left' };
+  'enemy:killed': { id: EnemyId };
+  'build:placed': { id: string };
+  'gun:assembled': BestGun;
+  'recipe:made': { id: string };
 }
 
 type Handler<T> = (payload: T) => void;

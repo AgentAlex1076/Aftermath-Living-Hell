@@ -45,6 +45,49 @@ export class CollisionWorld {
   private queryStamp = 0;
   /** Bumped whenever colliders change (lets debug views know to rebuild). */
   version = 0;
+  /** Bumped only when a collider inside `watch` changes, so far-off chunk streaming can be ignored. */
+  watchVersion = 0;
+  private watch = Infinity;
+
+  /** Track changes within this half-size square around the origin in `watchVersion`. */
+  setWatch(halfSize: number): void {
+    this.watch = halfSize;
+  }
+
+  /**
+   * Which tags overlap a circle, as bits: 1 = untagged, then 2, 4, 8... for `tags` in order.
+   * One query instead of one per ignore list.
+   */
+  tagMaskAt(x: number, z: number, r: number, tags: readonly string[]): number {
+    const minX = x - r;
+    const maxX = x + r;
+    const minZ = z - r;
+    const maxZ = z + r;
+    const stamp = ++this.queryStamp;
+    let mask = 0;
+    for (let ix = Math.floor(minX / CELL); ix <= Math.floor(maxX / CELL); ix++) {
+      for (let iz = Math.floor(minZ / CELL); iz <= Math.floor(maxZ / CELL); iz++) {
+        const list = this.cells.get(cellKey(ix, iz));
+        if (!list) continue;
+        for (const c of list) {
+          if (c.stamp === stamp) continue;
+          c.stamp = stamp;
+          const t = c.tag ? tags.indexOf(c.tag) : -1;
+          const bit = t < 0 ? 1 : 2 << t;
+          if (mask & bit) continue;
+          let hit: boolean;
+          if (c.kind === 'box') hit = c.maxX > minX && c.minX < maxX && c.maxZ > minZ && c.minZ < maxZ;
+          else {
+            const nx = Math.max(minX, Math.min(c.x, maxX));
+            const nz = Math.max(minZ, Math.min(c.z, maxZ));
+            hit = (c.x - nx) ** 2 + (c.z - nz) ** 2 < c.r * c.r;
+          }
+          if (hit) mask |= bit;
+        }
+      }
+    }
+    return mask;
+  }
 
   get colliders(): ReadonlySet<Collider> {
     return this.all;
@@ -122,7 +165,7 @@ export class CollisionWorld {
       if (i >= 0) list.splice(i, 1);
       if (list.length === 0) this.cells.delete(key);
     });
-    this.version++;
+    this.bump(c);
   }
 
   removeAll(list: readonly Collider[]): void {
@@ -201,7 +244,16 @@ export class CollisionWorld {
       }
       list.push(c);
     });
+    this.bump(c);
+  }
+
+  private bump(c: Collider): void {
     this.version++;
+    const w = this.watch;
+    const inside = c.kind === 'box'
+      ? c.maxX > -w && c.minX < w && c.maxZ > -w && c.minZ < w
+      : Math.abs(c.x) < w + c.r && Math.abs(c.z) < w + c.r;
+    if (inside) this.watchVersion++;
   }
 
   private forCells(c: Collider, fn: (key: number) => void): void {
