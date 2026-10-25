@@ -3,6 +3,7 @@ import { ALL_ENEMY_IDS, ENEMIES } from '../data/enemies';
 import { formatClock, formatScore } from '../data/score';
 import type { Meta, RecordedRun, RunRecord } from '../gameplay/Meta';
 import { el, q } from './dom';
+import { sound } from '../core/Sound';
 
 /** Hidden screens must not keep focus or receive keyboard activation (e.g. Space on a stale button). */
 export function setScreenHidden(root: HTMLElement, hidden: boolean): void {
@@ -13,11 +14,16 @@ export function setScreenHidden(root: HTMLElement, hidden: boolean): void {
 
 export class StartScreen {
   private readonly root: HTMLDivElement;
+  private started = false;
 
   constructor(
     parent: HTMLElement,
     meta: Meta,
-    handlers: { onStart: () => void; onCodex: () => void; onLedger: () => void },
+    handlers: {
+      onStart: () => void;
+      onCodex: () => void;
+      onLedger: () => void;
+    },
   ) {
     const issue = meta.nextIssue;
     const kicker = issue === 1 ? 'DAY ZERO' : 'ANOTHER DAWN';
@@ -33,24 +39,97 @@ export class StartScreen {
         <h1 class="cover-title">AFTERMATH</h1>
         <div class="cover-sub">LIVING HELL</div>
         <p class="cover-tagline">
+      <svg class="acid-defs" aria-hidden="true" width="0" height="0">
+        <defs>
+          <filter id="acid-melt" x="-20%" y="-20%" width="140%" height="160%" color-interpolation-filters="sRGB">
+            <feTurbulence type="fractalNoise" baseFrequency="0.04 0.07" numOctaves="2" seed="5" result="noise" />
+            <feDisplacementMap in="SourceGraphic" in2="noise" scale="14" xChannelSelector="R" yChannelSelector="G" />
+          </filter>
+        </defs>
+      </svg>
+      <div class="yellow-wipe"></div>
+      <div class="cover">
+        <div class="cover-issue acid-target" style="--acid-delay: 0s">ISSUE #${issue} — ${kicker}</div>
+        <h1 class="cover-title acid-target" style="--acid-delay: 0.06s">AFTERMATH</h1>
+        <div class="cover-sub acid-target" style="--acid-delay: 0.12s">LIVING HELL</div>
+        <p class="cover-tagline acid-target" style="--acid-delay: 0.18s">
           The lab breached. The gas took everyone. Keep your mask on, hold the hut,
           and survive whatever crawls out of the fog.
         </p>
         ${record}
         <nav class="cover-menu">
           <button class="btn" type="button" data-a="start">ENTER THE WASTELAND</button>
+        <button class="btn play-btn" type="button" data-a="start">
+          <span class="btn-label acid-target" style="--acid-delay: 0.03s">ENTER THE WASTELAND</span>
+        </button>
+        <div class="cover-row">
           <button class="btn secondary" type="button" data-a="codex">CODEX</button>
           <button class="btn secondary" type="button" data-a="ledger">THE LEDGER</button>
         </nav>
       </div>
     `;
     parent.appendChild(this.root);
-    q(this.root, '[data-a="start"]').addEventListener('click', () => {
-      setScreenHidden(this.root, true);
-      handlers.onStart();
+
+    const btn = q(this.root, '.play-btn');
+    btn.addEventListener('click', () => {
+      if (this.started) return;
+      this.started = true;
+      btn.blur();
+      this.root.inert = true;
+      this.playIntroTransition(btn, () => handlers.onStart());
     });
     q(this.root, '[data-a="codex"]').addEventListener('click', handlers.onCodex);
     q(this.root, '[data-a="ledger"]').addEventListener('click', handlers.onLedger);
+  }
+
+  private playIntroTransition(btn: HTMLElement, onStart: () => void): void {
+    // Sound: toxic sizzle & bubbling
+    sound.playAcidMelt();
+
+    // Spawn acid bubbles & rising vapor particles on every text element
+    const targets = this.root.querySelectorAll<HTMLElement>('.acid-target');
+    targets.forEach((target) => {
+      const rect = target.getBoundingClientRect();
+      const count = Math.max(10, Math.min(36, Math.round(rect.width / 16)));
+      for (let i = 0; i < count; i++) {
+        const drop = document.createElement('span');
+        const isFume = i % 2 === 0;
+        drop.className = isFume ? 'acid-particle fume' : 'acid-particle drip';
+        drop.style.setProperty('--x', `${(Math.random() * 100).toFixed(1)}%`);
+        drop.style.setProperty('--y', `${(Math.random() * 80 + 10).toFixed(1)}%`);
+        drop.style.setProperty('--dx', `${((Math.random() - 0.5) * 60).toFixed(1)}px`);
+        drop.style.setProperty('--dy', `${(isFume ? -55 - Math.random() * 90 : 30 + Math.random() * 55).toFixed(1)}px`);
+        drop.style.setProperty('--sz', `${(isFume ? 8 + Math.random() * 18 : 5 + Math.random() * 10).toFixed(1)}px`);
+        drop.style.setProperty('--d', `${(Math.random() * 0.45).toFixed(2)}s`);
+        target.appendChild(drop);
+      }
+    });
+
+    this.root.classList.add('melting');
+
+    // Stage 2: Zoom into the yellow button so hazard yellow fills the entire screen
+    window.setTimeout(() => {
+      sound.playZoomWhoosh();
+      const r = btn.getBoundingClientRect();
+      const cx = r.left + r.width / 2;
+      const cy = r.top + r.height / 2;
+      const dx = window.innerWidth / 2 - cx;
+      const dy = window.innerHeight / 2 - cy;
+      btn.style.setProperty('--zoom-tx', `${dx.toFixed(1)}px`);
+      btn.style.setProperty('--zoom-ty', `${dy.toFixed(1)}px`);
+      this.root.classList.add('zooming');
+    }, 950);
+
+    // Stage 3: Screen is full hazard yellow -> start 3D fall cutscene & dissolve yellow curtain
+    window.setTimeout(() => {
+      onStart();
+      this.root.classList.add('wipe-out');
+    }, 1580);
+
+    // Stage 4: Fully hide start screen DOM once yellow curtain finishes revealing the cutscene
+    window.setTimeout(() => {
+      setScreenHidden(this.root, true);
+    }, 2150);
   }
 }
 

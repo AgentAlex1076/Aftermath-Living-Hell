@@ -86,6 +86,10 @@ export class Input {
   private readonly framePressed = new Set<Action>();
   private wheel = 0;
 
+  private pointerLockWanted = false;
+  private pointerLocked = false;
+  private readonly mouseDelta = { x: 0, y: 0 };
+
   constructor(private readonly surface: HTMLElement) {
     window.addEventListener('keydown', this.onKeyDown);
     window.addEventListener('keyup', this.onKeyUp);
@@ -96,7 +100,46 @@ export class Input {
     window.addEventListener('blur', this.onBlur);
     document.addEventListener('mouseleave', () => (this.mouseInWindow = false));
     document.addEventListener('mouseenter', () => (this.mouseInWindow = true));
+    document.addEventListener('pointerlockchange', this.onPointerLockChange);
+    document.addEventListener('pointerlockerror', this.onPointerLockError);
     window.addEventListener('contextmenu', (e) => e.preventDefault());
+  }
+
+  get isPointerLocked(): boolean {
+    return this.pointerLocked;
+  }
+
+  get wantsPointerLock(): boolean {
+    return this.pointerLockWanted;
+  }
+
+  requestPointerLock(): void {
+    this.pointerLockWanted = true;
+    if (this.surface && !this.pointerLocked) {
+      try {
+        const res = this.surface.requestPointerLock();
+        if (res && 'catch' in res) {
+          res.catch(() => {});
+        }
+      } catch {
+        // Ignored if user hasn't interacted yet
+      }
+    }
+  }
+
+  exitPointerLock(): void {
+    this.pointerLockWanted = false;
+    if (document.pointerLockElement) {
+      document.exitPointerLock();
+    }
+  }
+
+  consumeMouseDelta(): { x: number; y: number } {
+    const x = this.mouseDelta.x;
+    const y = this.mouseDelta.y;
+    this.mouseDelta.x = 0;
+    this.mouseDelta.y = 0;
+    return { x, y };
   }
 
   isDown(action: Action): boolean {
@@ -143,6 +186,17 @@ export class Input {
     this.down.add(action);
   }
 
+  private onPointerLockChange = (): void => {
+    this.pointerLocked = document.pointerLockElement === this.surface;
+    if (!this.pointerLocked && this.pointerLockWanted) {
+      // User or browser released pointer lock
+    }
+  };
+
+  private onPointerLockError = (): void => {
+    this.pointerLocked = false;
+  };
+
   private onKeyDown = (e: KeyboardEvent): void => {
     const action = KEY_BINDINGS[e.code];
     if (!action) return;
@@ -159,6 +213,17 @@ export class Input {
   };
 
   private onMouseMove = (e: MouseEvent): void => {
+    if (this.pointerLocked) {
+      this.mouseDelta.x += e.movementX || 0;
+      this.mouseDelta.y += e.movementY || 0;
+      this.mouseNdc.x = 0;
+      this.mouseNdc.y = 0;
+      this.mouseScreen.x = window.innerWidth / 2;
+      this.mouseScreen.y = window.innerHeight / 2;
+      this.mouseInWindow = true;
+      return;
+    }
+
     const rect = this.surface.getBoundingClientRect();
     this.mouseScreen.x = e.clientX;
     this.mouseScreen.y = e.clientY;
@@ -168,6 +233,9 @@ export class Input {
   };
 
   private onMouseDown = (e: MouseEvent): void => {
+    if (this.pointerLockWanted && !this.pointerLocked && this.enabled && e.button === 0) {
+      this.requestPointerLock();
+    }
     const action = MOUSE_BINDINGS[e.button];
     if (action) this.press(action);
   };

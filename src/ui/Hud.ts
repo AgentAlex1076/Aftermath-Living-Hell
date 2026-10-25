@@ -8,6 +8,7 @@ const MAX_TOASTS = 3;
 /** In-game HUD overlay. Pure view: the game pushes state into it every frame. */
 export class Hud {
   readonly root: HTMLDivElement;
+  private readonly letterboxRoot: HTMLDivElement;
   private readonly healthBar: HTMLElement;
   private readonly healthValue: HTMLElement;
   private readonly staminaBar: HTMLElement;
@@ -47,6 +48,13 @@ export class Hud {
   private lastBoss: string | null = null;
 
   constructor(parent: HTMLElement) {
+    this.letterboxRoot = el('div', 'letterbox-container');
+    this.letterboxRoot.innerHTML = `
+      <div class="letterbox letterbox-top"></div>
+      <div class="letterbox letterbox-bottom"></div>
+    `;
+    parent.appendChild(this.letterboxRoot);
+
     this.root = el('div', 'hud');
     this.root.innerHTML = `
       <div class="gas-overlay"></div>
@@ -161,6 +169,10 @@ export class Hud {
 
   setVisible(visible: boolean): void {
     this.root.classList.toggle('visible', visible);
+  }
+
+  setCutsceneLetterbox(active: boolean): void {
+    this.letterboxRoot.classList.toggle('cinematic-bars', active);
   }
 
   /** Boss health across the top; `name` null hides it. */

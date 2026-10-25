@@ -2,7 +2,10 @@ import * as THREE from 'three';
 import { CONFIG } from '../data/config';
 import { DEG2RAD, clamp, dampFactor } from '../core/math';
 
-/** Angled 3/4 top-down follow camera with zoom, aim look-ahead and trauma-based shake. */
+/**
+ * Camera rig providing the signature 3/4 top-down isometric view with smooth
+ * lookahead, camera shake, cutscene positioning, and zoom controls.
+ */
 export class CameraRig {
   readonly camera: THREE.PerspectiveCamera;
   private readonly offsetDir = new THREE.Vector3();
@@ -11,6 +14,7 @@ export class CameraRig {
   private readonly lead = new THREE.Vector3();
   private readonly shakeOffset = new THREE.Vector3();
   private readonly lookTarget = new THREE.Vector3();
+
   private distance: number = CONFIG.camera.distance;
   private targetDistance: number = CONFIG.camera.distance;
   private trauma = 0;
@@ -37,22 +41,17 @@ export class CameraRig {
     this.trauma = clamp(this.trauma + amount, 0, 1);
   }
 
-  update(dt: number, target: THREE.Vector3, aim: THREE.Vector3 | null, wheelDelta: number): void {
+  /** Directly positions the camera for cinematic cutscenes while preserving trauma shake. */
+  updateCutscene(dt: number, target: THREE.Vector3, yawDeg: number, pitchDeg: number, distance: number): void {
     const c = CONFIG.camera;
     this.time += dt;
+    this.focus.copy(target);
+    this.distance = distance;
+    this.targetDistance = distance;
 
-    if (wheelDelta !== 0) {
-      this.targetDistance = clamp(this.targetDistance * (1 + wheelDelta * c.zoomStep), c.minDistance, c.maxDistance);
-    }
-    this.distance += (this.targetDistance - this.distance) * dampFactor(c.zoomSharpness, dt);
-
-    this.lead.set(0, 0, 0);
-    if (aim) {
-      this.lead.set(aim.x - target.x, 0, aim.z - target.z).multiplyScalar(c.lookAhead);
-      if (this.lead.length() > c.maxLookAhead) this.lead.setLength(c.maxLookAhead);
-    }
-    this.desiredFocus.copy(target).add(this.lead);
-    this.focus.lerp(this.desiredFocus, dampFactor(c.followSharpness, dt));
+    const yaw = yawDeg * DEG2RAD;
+    const pitch = pitchDeg * DEG2RAD;
+    this.offsetDir.set(Math.sin(yaw) * Math.cos(pitch), Math.sin(pitch), Math.cos(yaw) * Math.cos(pitch));
 
     this.trauma = Math.max(0, this.trauma - dt * 1.6);
     const shake = this.trauma * this.trauma * c.maxShake;
@@ -66,12 +65,51 @@ export class CameraRig {
     this.applyTransform();
   }
 
-  /** Unit vector on the ground plane pointing "up" on screen. */
+  update(
+    dt: number,
+    target: THREE.Vector3,
+    aim: THREE.Vector3 | null,
+    wheelDelta: number,
+  ): void {
+    const c = CONFIG.camera;
+    this.time += dt;
+
+    this.trauma = Math.max(0, this.trauma - dt * 1.6);
+    const shake = this.trauma * this.trauma * c.maxShake;
+    const t = this.time * 38;
+    this.shakeOffset.set(
+      Math.sin(t * 1.1) * Math.cos(t * 0.37) * shake,
+      Math.sin(t * 0.9 + 1.3) * shake * 0.6,
+      Math.cos(t * 1.3 + 0.6) * Math.sin(t * 0.53) * shake,
+    );
+
+    const yaw = c.yawDeg * DEG2RAD;
+    const pitch = c.pitchDeg * DEG2RAD;
+    this.offsetDir.set(Math.sin(yaw) * Math.cos(pitch), Math.sin(pitch), Math.cos(yaw) * Math.cos(pitch));
+
+    if (wheelDelta !== 0) {
+      this.targetDistance = clamp(this.targetDistance * (1 + wheelDelta * c.zoomStep), c.minDistance, c.maxDistance);
+    }
+    this.distance += (this.targetDistance - this.distance) * dampFactor(c.zoomSharpness, dt);
+
+    this.lead.set(0, 0, 0);
+    if (aim) {
+      this.lead.set(aim.x - target.x, 0, aim.z - target.z).multiplyScalar(c.lookAhead);
+      if (this.lead.length() > c.maxLookAhead) this.lead.setLength(c.maxLookAhead);
+    }
+    const groundY = Math.abs(target.y - 1.0) < 0.2 ? target.y - 1.0 : target.y;
+    this.desiredFocus.copy(target).setY(groundY + 1.0).add(this.lead);
+    this.focus.lerp(this.desiredFocus, dampFactor(c.followSharpness, dt));
+
+    this.applyTransform();
+  }
+
+  /** Unit vector on the ground plane pointing "up" on screen / forward in movement direction. */
   groundForward(out: THREE.Vector3): THREE.Vector3 {
     return out.set(-this.offsetDir.x, 0, -this.offsetDir.z).normalize();
   }
 
-  /** Unit vector on the ground plane pointing "right" on screen. */
+  /** Unit vector on the ground plane pointing "right" on screen / strafe right direction. */
   groundRight(out: THREE.Vector3): THREE.Vector3 {
     this.groundForward(out);
     return out.set(-out.z, 0, out.x);

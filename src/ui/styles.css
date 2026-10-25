@@ -163,6 +163,37 @@ body.playing {
   opacity: 1;
 }
 
+.letterbox-container {
+  pointer-events: none;
+}
+
+.letterbox {
+  position: fixed;
+  left: 0;
+  right: 0;
+  height: clamp(38px, 6.5vh, 68px);
+  background: #000;
+  z-index: 99;
+  pointer-events: none;
+  transform: translateY(-100%);
+  transition: transform 0.65s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.letterbox-top {
+  top: 0;
+  transform: translateY(-100%);
+}
+
+.letterbox-bottom {
+  bottom: 0;
+  transform: translateY(100%);
+}
+
+.letterbox-container.cinematic-bars .letterbox-top,
+.letterbox-container.cinematic-bars .letterbox-bottom {
+  transform: translateY(0);
+}
+
 .vignette {
   position: absolute;
   inset: 0;
@@ -2752,6 +2783,170 @@ body.building .prompt {
   color: var(--paper);
   background: var(--blood);
   box-shadow: 7px 5px 0 var(--ink);
+}
+
+.acid-defs {
+  position: absolute;
+  width: 0;
+  height: 0;
+  pointer-events: none;
+}
+
+.acid-target {
+  position: relative;
+  display: inline-block;
+  will-change: transform, opacity, filter;
+}
+
+.btn-label.acid-target {
+  display: inline-block;
+}
+
+.acid-particle {
+  position: absolute;
+  left: var(--x, 50%);
+  top: var(--y, 50%);
+  width: var(--sz, 10px);
+  height: var(--sz, 10px);
+  border-radius: 50%;
+  pointer-events: none;
+  opacity: 0;
+}
+
+.acid-particle.fume {
+  background: radial-gradient(circle at 35% 35%, #eaffb0 0%, var(--toxic) 55%, rgba(70, 180, 15, 0) 100%);
+  box-shadow: 0 0 10px var(--toxic);
+}
+
+.acid-particle.drip {
+  background: var(--toxic);
+  border: 1.5px solid var(--ink);
+  box-shadow: 0 0 6px var(--toxic);
+}
+
+.start-screen.melting .acid-target {
+  animation: acid-evaporate 1.05s var(--acid-delay, 0s) cubic-bezier(0.25, 1, 0.5, 1) forwards;
+  filter: url(#acid-melt) drop-shadow(0 0 10px rgba(140, 255, 58, 0.7));
+}
+
+.start-screen.melting .acid-particle.fume {
+  animation: acid-fume-rise 0.95s calc(var(--acid-delay, 0s) + var(--d, 0s)) cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+.start-screen.melting .acid-particle.drip {
+  animation: acid-drip-fall 0.85s calc(var(--acid-delay, 0s) + var(--d, 0s)) cubic-bezier(0.33, 1, 0.68, 1) forwards;
+}
+
+@keyframes acid-evaporate {
+  0% {
+    color: var(--paper);
+    transform: none;
+    opacity: 1;
+  }
+  20% {
+    color: var(--toxic);
+    background-color: rgba(140, 255, 58, 0.25);
+    border-color: var(--toxic);
+    text-shadow: 0 0 16px var(--toxic);
+    transform: translateY(-2px) scale(1.02);
+    opacity: 1;
+    filter: url(#acid-melt) drop-shadow(0 0 12px var(--toxic)) blur(0px);
+  }
+  60% {
+    color: #eaffc4;
+    background-color: rgba(140, 255, 58, 0.12);
+    border-color: rgba(140, 255, 58, 0.3);
+    text-shadow: 0 0 24px var(--toxic);
+    transform: translateY(-26px) scale(1.08, 1.25);
+    opacity: 0.65;
+    filter: url(#acid-melt) drop-shadow(0 0 18px var(--toxic)) blur(3px);
+  }
+  100% {
+    color: #ffffff;
+    background-color: transparent;
+    border-color: transparent;
+    text-shadow: 0 0 32px var(--toxic);
+    transform: translateY(-68px) scale(1.15, 1.6);
+    opacity: 0;
+    filter: url(#acid-melt) drop-shadow(0 0 24px var(--toxic)) blur(8px);
+  }
+}
+
+@keyframes acid-fume-rise {
+  0% {
+    opacity: 0;
+    transform: translate(-50%, -50%) scale(0.4);
+  }
+  20% {
+    opacity: 0.85;
+    transform: translate(calc(-50% + var(--dx) * 0.2), calc(-50% + var(--dy) * 0.2)) scale(1);
+  }
+  100% {
+    opacity: 0;
+    transform: translate(calc(-50% + var(--dx)), calc(-50% + var(--dy))) scale(2.4);
+  }
+}
+
+@keyframes acid-drip-fall {
+  0% {
+    opacity: 0;
+    transform: translate(-50%, -50%) scale(0.5);
+  }
+  20% {
+    opacity: 0.95;
+    transform: translate(-50%, 0) scale(1, 1.2);
+  }
+  75% {
+    opacity: 0.8;
+    transform: translate(calc(-50% + var(--dx) * 0.3), calc(-50% + var(--dy) * 0.85)) scale(0.9, 1.5);
+  }
+  100% {
+    opacity: 0;
+    transform: translate(calc(-50% + var(--dx) * 0.4), calc(-50% + var(--dy))) scale(1.4, 0.2);
+  }
+}
+
+.yellow-wipe {
+  position: fixed;
+  inset: 0;
+  background: var(--hazard);
+  opacity: 0;
+  pointer-events: none;
+  z-index: 20;
+  transition: opacity 0.22s ease;
+}
+
+.start-screen.zooming .play-btn {
+  position: relative;
+  z-index: 25;
+  border-color: var(--hazard);
+  box-shadow: 0 0 0 40px var(--hazard);
+  transition:
+    transform 0.62s cubic-bezier(0.55, 0.04, 0.92, 0.46),
+    border-color 0.25s ease,
+    box-shadow 0.4s ease;
+  transform: translate(var(--zoom-tx, 0px), var(--zoom-ty, 0px)) scale(48) skewX(var(--skew));
+}
+
+.start-screen.zooming .yellow-wipe {
+  opacity: 1;
+  transition: opacity 0.28s 0.32s ease-in;
+}
+
+.start-screen.wipe-out {
+  background: transparent;
+  transition: opacity 0.55s ease-out;
+  opacity: 0;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .start-screen.zooming .play-btn {
+    transform: none;
+    transition: opacity 0.3s ease;
+  }
+  .start-screen.melting .acid-target {
+    animation-duration: 0.35s;
+  }
 }
 
 .cover-row {

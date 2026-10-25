@@ -13,22 +13,22 @@ interface ArmPose {
   twist: number;
 }
 
-const RELAX: ArmPose = { armLx: 0.05, armLz: -0.12, armRx: 0.05, armRz: 0.12, foreLx: -0.3, foreRx: -0.3, twist: 0 };
-const READY: ArmPose = { ...RELAX, armRx: -0.35, armRz: 0.18, foreRx: -1.0 };
-const AIM: ArmPose = { armLx: -1.05, armLz: -0.18, armRx: -1.15, armRz: 0.06, foreLx: -0.2, foreRx: -0.12, twist: 0.08 };
-const SPRINT: ArmPose = { armLx: -0.35, armLz: -0.25, armRx: -0.35, armRz: 0.25, foreLx: -1.25, foreRx: -1.1, twist: 0 };
+const RELAX: ArmPose = { armLx: 0.05, armLz: 0.14, armRx: 0.05, armRz: -0.14, foreLx: -0.28, foreRx: -0.28, twist: 0 };
+const READY: ArmPose = { ...RELAX, armRx: -0.32, armRz: -0.16, foreRx: -0.95 };
+const AIM: ArmPose = { armLx: -1.02, armLz: 0.12, armRx: -1.12, armRz: -0.06, foreLx: -0.2, foreRx: -0.12, twist: 0.08 };
+const SPRINT: ArmPose = { armLx: -0.32, armLz: 0.18, armRx: -0.32, armRz: -0.18, foreLx: -1.2, foreRx: -1.1, twist: 0 };
 
 /** Keyframes as [progress, pose overrides]; the swing hits at ~0.45 (see SWING_IMPACT). */
 const CHOP: [number, Partial<ArmPose>][] = [
   [0, {}],
-  [0.36, { armRx: -2.55, armRz: 0.32, foreRx: -1.35, armLx: -0.5, foreLx: -0.9, twist: -0.35 }],
-  [0.47, { armRx: -0.85, armRz: 0.1, foreRx: -0.1, armLx: -0.3, foreLx: -0.6, twist: 0.3 }],
+  [0.36, { armRx: -2.55, armRz: -0.25, foreRx: -1.35, armLx: -0.5, armLz: 0.18, foreLx: -0.9, twist: -0.35 }],
+  [0.47, { armRx: -0.85, armRz: -0.1, foreRx: -0.1, armLx: -0.3, armLz: 0.14, foreLx: -0.6, twist: 0.3 }],
   [1, {}],
 ];
 const PUNCH: [number, Partial<ArmPose>][] = [
   [0, {}],
-  [0.3, { armRx: -0.9, armRz: 0.5, foreRx: -1.9, armLx: -0.8, foreLx: -1.6, twist: -0.4 }],
-  [0.45, { armRx: -1.55, armRz: 0.02, foreRx: -0.05, armLx: -0.4, foreLx: -1.4, twist: 0.35 }],
+  [0.3, { armRx: -0.9, armRz: -0.38, foreRx: -1.9, armLx: -0.8, armLz: 0.22, foreLx: -1.6, twist: -0.4 }],
+  [0.45, { armRx: -1.55, armRz: -0.05, foreRx: -0.05, armLx: -0.4, armLz: 0.16, foreLx: -1.4, twist: 0.35 }],
   [1, {}],
 ];
 
@@ -167,6 +167,174 @@ export class PlayerAnimator {
     }
     n.rollPivot.position.y = 0.9 - 0.2 * tuck;
     n.body.scale.setScalar(1 - 0.3 * tuck);
+  }
+
+  /**
+   * Cinematic cutscene character animation:
+   * 0.00..0.95s: Atmospheric sky drop (flailing & wind drag)
+   * 0.95..1.40s: Ground impact & prone splat (damped natural compression)
+   * 1.40..2.20s: Hands push floor, chest raises, knees tuck under hips (crawling/kneeling)
+   * 2.20..2.90s: Driving through feet and knees, torso straightens up into standing
+   * 2.90..3.60s: Grounded upright stance, subtle dazed head roll & glove dust-off
+   * 3.60+s: Fully blended to natural idle
+   */
+  updateIntroCutscene(elapsed: number): void {
+    const n = this.n;
+    const tFallEnd = 0.95;
+    const tImpactEnd = 1.40;
+    const tKneelEnd = 2.20;
+    const tStandEnd = 2.90;
+    const tSettleEnd = 3.60;
+
+    // Reset scales
+    n.body.scale.set(1, 1, 1);
+
+    if (elapsed < tFallEnd) {
+      // 1. Plummeting: aerodynamic drag and desperate limb flailing
+      const u = clamp(elapsed / tFallEnd, 0, 1);
+      const w = elapsed * 24;
+      n.rollPivot.position.y = 0.9;
+      n.rollPivot.rotation.set(0.35 + Math.sin(w * 0.4) * 0.15, Math.sin(elapsed * 4) * 0.25, Math.cos(w * 0.3) * 0.15);
+
+      const stretch = 1 + u * 0.18;
+      n.body.scale.set(1 / Math.sqrt(stretch), stretch, 1 / Math.sqrt(stretch));
+
+      n.hips.position.y = 0.9;
+      n.hips.rotation.set(0.15, 0, 0);
+      n.head.rotation.set(-0.4, Math.sin(w * 0.6) * 0.2, 0);
+
+      // Arms reaching upwards trying to stabilize
+      n.armL.rotation.set(-2.4 + Math.sin(w) * 0.45, 0, -0.5);
+      n.armR.rotation.set(-2.4 + Math.cos(w) * 0.45, 0, 0.5);
+      n.forearmL.rotation.x = -0.5 + Math.sin(w * 1.2) * 0.25;
+      n.forearmR.rotation.x = -0.5 + Math.cos(w * 1.2) * 0.25;
+
+      // Legs kicking in air
+      n.legL.rotation.set(Math.sin(w * 0.9) * 0.6, 0, -0.15);
+      n.legR.rotation.set(-Math.sin(w * 0.9) * 0.6, 0, 0.15);
+      n.shinL.rotation.x = 0.5 + Math.max(0, Math.cos(w * 0.9)) * 0.7;
+      n.shinR.rotation.x = 0.5 + Math.max(0, -Math.cos(w * 0.9)) * 0.7;
+      return;
+    }
+
+    if (elapsed < tImpactEnd) {
+      // 2. Heavy prone impact & organic body compression (smooth spring rebound)
+      const u = (elapsed - tFallEnd) / (tImpactEnd - tFallEnd);
+      const bounce = Math.exp(-u * 6.5) * Math.sin(u * Math.PI * 4);
+      const sy = clamp(1 - 0.45 * Math.max(0, bounce), 0.55, 1.0);
+      const sx = 1 + (1 - sy) * 0.6;
+      n.body.scale.set(sx, sy, sx);
+
+      // Flat on ground facing downward (rollPivot tilted down 90 deg)
+      n.rollPivot.position.y = 0.25;
+      n.rollPivot.rotation.set(Math.PI / 2, 0, 0);
+
+      n.hips.position.y = 0.9;
+      n.hips.rotation.set(0, 0, 0);
+      n.head.rotation.set(-0.15, Math.sin(u * 14) * 0.08 * (1 - u), 0);
+
+      // Limbs spread on ground
+      n.armL.rotation.set(-1.1, 0, -0.9);
+      n.armR.rotation.set(-1.1, 0, 0.9);
+      n.forearmL.rotation.x = -0.15;
+      n.forearmR.rotation.x = -0.15;
+
+      n.legL.rotation.set(0.1, 0, -0.25);
+      n.legR.rotation.set(0.1, 0, 0.25);
+      n.shinL.rotation.x = 0.1;
+      n.shinR.rotation.x = 0.1;
+      return;
+    }
+
+    if (elapsed < tKneelEnd) {
+      // 3. Hands push against the floor, chest rises, knees tuck under hips into kneeling
+      const u = (elapsed - tImpactEnd) / (tKneelEnd - tImpactEnd);
+      const e = smoothstep(0, 1, u);
+
+      // Pitch decreases from 90 deg (prone) to 40 deg (kneeling on all fours)
+      n.rollPivot.position.y = lerp(0.25, 0.58, e);
+      n.rollPivot.rotation.set(lerp(Math.PI / 2, 0.65, e), 0, 0);
+
+      // Hips arch up
+      n.hips.position.y = 0.9;
+      n.hips.rotation.set(lerp(0, 0.35, e), 0, 0);
+      n.head.rotation.set(lerp(-0.15, -0.4, e), 0, 0);
+
+      // Arms push down straight onto ground (elbows extend from bent to support)
+      n.armL.rotation.set(lerp(-1.1, -0.85, e), 0, lerp(-0.9, -0.3, e));
+      n.armR.rotation.set(lerp(-1.1, -0.85, e), 0, lerp(0.9, 0.3, e));
+      n.forearmL.rotation.x = lerp(-0.15, -0.55, e);
+      n.forearmR.rotation.x = lerp(-0.15, -0.55, e);
+
+      // Legs pull forward under torso, shins bend beneath body
+      n.legL.rotation.set(lerp(0.1, -0.9, e), 0, -0.15);
+      n.legR.rotation.set(lerp(0.1, -0.7, e), 0, 0.15);
+      n.shinL.rotation.x = lerp(0.1, 1.85, e);
+      n.shinR.rotation.x = lerp(0.1, 1.6, e);
+      return;
+    }
+
+    if (elapsed < tStandEnd) {
+      // 4. Powering up from knees to full standing posture
+      const u = (elapsed - tKneelEnd) / (tStandEnd - tKneelEnd);
+      const e = smoothstep(0, 1, u);
+
+      // rollPivot rises from 0.58 to 0.9 and pitch uncurls from 0.65 to 0
+      n.rollPivot.position.y = lerp(0.58, 0.9, e);
+      n.rollPivot.rotation.set(lerp(0.65, 0, e), 0, 0);
+
+      n.hips.position.y = 0.9;
+      n.hips.rotation.set(lerp(0.35, 0, e), 0, 0);
+
+      // Head lifts up looking forward
+      n.head.rotation.set(lerp(-0.4, 0.05, e), 0, 0);
+
+      // Arms leave the floor, swing back then hang naturally
+      n.armL.rotation.set(lerp(-0.85, RELAX.armLx, e), 0, lerp(-0.3, RELAX.armLz, e));
+      n.armR.rotation.set(lerp(-0.85, RELAX.armRx, e), 0, lerp(0.3, RELAX.armRz, e));
+      n.forearmL.rotation.x = lerp(-0.55, RELAX.foreLx, e);
+      n.forearmR.rotation.x = lerp(-0.55, RELAX.foreRx, e);
+
+      // Legs extend fully straight
+      n.legL.rotation.set(lerp(-0.9, 0, e), 0, lerp(-0.15, 0, e));
+      n.legR.rotation.set(lerp(-0.7, 0, e), 0, lerp(0.15, 0, e));
+      n.shinL.rotation.x = lerp(1.85, 0.05, e);
+      n.shinR.rotation.x = lerp(1.6, 0.05, e);
+      return;
+    }
+
+    // 5. Standing tall: checking gas mask seal & regulator, clearing vision, deep gasping breath
+    const u = clamp((elapsed - tStandEnd) / (tSettleEnd - tStandEnd), 0, 1);
+
+    n.rollPivot.position.y = 0.9;
+    n.rollPivot.rotation.set(0, 0, 0);
+
+    // Deep heavy chest breathing heave inside suit
+    const chestHeave = Math.sin(u * Math.PI * 3) * 0.08 * (1 - u);
+    n.hips.position.y = 0.9 + chestHeave;
+    n.hips.rotation.set(-chestHeave * 0.8, 0, 0);
+
+    // Head groggy roll then checking surroundings
+    const headRoll = u < 0.4 ? Math.sin(u * 18) * 0.2 * (1 - u * 2) : Math.sin((u - 0.4) * 6) * 0.25;
+    n.head.rotation.set(0.1 + chestHeave * 1.2, headRoll, 0);
+
+    // Right glove reaches up to check gas mask filter seal (0.1..0.7) then returns to side
+    const maskCheckPhase = u > 0.05 && u < 0.75 ? Math.sin(((u - 0.05) / 0.7) * Math.PI) : 0;
+    n.armR.rotation.set(
+      lerp(RELAX.armRx, -1.65, maskCheckPhase),
+      lerp(0, -0.4, maskCheckPhase),
+      lerp(RELAX.armRz, 0.45, maskCheckPhase),
+    );
+    n.forearmR.rotation.x = lerp(RELAX.foreRx, -1.85, maskCheckPhase);
+
+    // Left arm balances and relaxes
+    n.armL.rotation.set(RELAX.armLx + chestHeave * 0.5, 0, RELAX.armLz - maskCheckPhase * 0.2);
+    n.forearmL.rotation.x = RELAX.foreLx;
+
+    n.legL.rotation.set(0, 0, 0);
+    n.legR.rotation.set(0, 0, 0);
+    n.shinL.rotation.x = 0.05;
+    n.shinR.rotation.x = 0.05;
   }
 }
 

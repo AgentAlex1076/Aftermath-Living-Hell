@@ -3,7 +3,7 @@ import { CONFIG } from '../data/config';
 import { events } from '../core/EventBus';
 import { GameLoop } from '../core/GameLoop';
 import { Input, type Action } from '../core/Input';
-import { clamp, damp, wrapAngle } from '../core/math';
+import { clamp, damp, lerp, smoothstep, wrapAngle } from '../core/math';
 import { Rng } from '../core/random';
 import { evaluateBuild, makePipePistol } from '../data/guns';
 import { ALL_ITEM_IDS, ITEMS, type ItemDef, type ItemId } from '../data/items';
@@ -51,11 +51,12 @@ import { HotbarView, InventoryView } from '../ui/InventoryUI';
 import { Minimap } from '../ui/Minimap';
 import { MetaOverlay } from '../ui/MetaScreens';
 import { DeathScreen, PauseScreen, StartScreen } from '../ui/Screens';
+import { sound } from '../core/Sound';
 import { InteractionSystem, type Interactable } from '../world/Interactables';
 import { buildStarterArea, type StarterArea } from '../world/StarterArea';
 import { World } from '../world/World';
 
-type GameState = 'title' | 'playing' | 'paused' | 'dead';
+type GameState = 'title' | 'intro' | 'playing' | 'paused' | 'dead';
 
 /** Hotbar slots normally; build bar pieces in build mode (which has a 7th). */
 const HOTBAR_KEYS: Action[] = ['hotbar1', 'hotbar2', 'hotbar3', 'hotbar4', 'hotbar5', 'hotbar6', 'hotbar7'];
@@ -128,6 +129,10 @@ export class Game {
   private readonly debug: DebugPanel;
 
   private state: GameState = 'title';
+  private introElapsed = 0;
+  private introImpactDone = false;
+  private introHeartbeatDone = false;
+  private introBreathingDone = false;
   private colliderDebug: THREE.LineSegments | null = null;
   private colliderDebugVersion = -1;
   private currentInteractable: Interactable | null = null;
@@ -154,6 +159,7 @@ export class Game {
 
     this.renderer = createRenderer(appRoot);
     this.rig = new CameraRig(window.innerWidth / window.innerHeight);
+    this.scene.add(this.rig.camera);
     this.env = new Environment(this.scene, this.seed);
     this.input = new Input(this.renderer.domElement);
     this.lights = new LightPool(this.scene);
@@ -344,10 +350,31 @@ export class Game {
 
   private beginPlay(): void {
     if (this.state !== 'title') return;
-    this.state = 'playing';
-    this.input.enabled = true;
-    this.hud.setVisible(true);
+    this.state = 'intro';
+    this.introElapsed = 0;
+    this.introImpactDone = false;
+    this.introHeartbeatDone = false;
+    this.introBreathingDone = false;
+    this.input.enabled = false;
+    this.hud.setCutsceneLetterbox(true);
+    this.hud.setVisible(false);
     document.body.classList.add('playing');
+
+    // Horror sound design: toxic wind storm & sky drop roar
+    sound.playHorrorDropStorm();
+    sound.playHeartbeat();
+  }
+
+  private finishIntro(): void {
+    if (this.state !== 'intro') return;
+    this.state = 'playing';
+    this.player.object.position.y = 0;
+    this.env.setCutsceneStorm(false, 0, 1.0);
+    this.input.enabled = true;
+    this.hud.setCutsceneLetterbox(false);
+    this.hud.setVisible(true);
+    this.hud.setCrosshair(0, 0, false);
+
     window.setTimeout(() => events.emit('toast', { text: 'Your gear is in the crate by the door. Grab it.', tone: 'info' }), 700);
     window.setTimeout(() => events.emit('toast', { text: 'The Gun Bench is between the table and the oven. A receiver is the core.', tone: 'info' }), 2800);
     window.setTimeout(() => events.emit('toast', { text: 'Stay close to the hut. Something is moving in the fog.', tone: 'warn' }), 5200);
@@ -495,6 +522,7 @@ export class Game {
     this.state = 'dead';
     this.inventoryView.setOpen(false);
     this.input.enabled = false;
+    this.hud.setCrosshair(0, 0, false);
     this.hud.setVisible(false);
     document.body.classList.remove('playing');
     events.emit('camera:shake', { amount: 0.8 });
@@ -676,13 +704,116 @@ export class Game {
 
     this.renderPos.lerpVectors(p.prevPosition, p.position, alpha);
     const facing = p.prevFacing + wrapAngle(p.facing - p.prevFacing) * alpha;
-    p.object.position.copy(this.renderPos);
-    p.object.rotation.y = facing;
-    if (this.state !== 'dead') this.animator.update(dt, p, facing);
-    else p.object.rotation.z = Math.min(Math.PI / 2, p.object.rotation.z + dt * 4);
 
-    this.focusTarget.copy(this.renderPos).setY(1);
-    this.rig.update(dt, this.focusTarget, playing && p.hasAimPoint ? p.aimPoint : null, this.input.consumeWheel());
+    if (this.state === 'intro') {
+      this.introElapsed += dt;
+      const t = this.introElapsed;
+      const tFallEnd = 0.95;
+      const tStandEnd = 2.90;
+      const tTotal = 4.75;
+
+      let fallY = 0;
+      let lightningIntensity = 0;
+
+      if (t < tFallEnd) {
+        const u = clamp(t / tFallEnd, 0, 1);
+        // Accelerating gravity drop from high in the sky (36m -> 0m)
+        fallY = 36 * (1 - u * u);
+
+        // Toxic thunderstorm: lightning flashes around t=0.25 and t=0.65
+        if ((t > 0.22 && t < 0.32) || (t > 0.62 && t < 0.72)) {
+          lightningIntensity = Math.sin(t * 35) > 0 ? 1.0 : 0.4;
+          if (t > 0.62 && !this.introHeartbeatDone) {
+            this.introHeartbeatDone = true;
+            sound.playThunder();
+            sound.playHeartbeat();
+          }
+        }
+        // Thicker fog and volumetric light shafts in upper atmosphere
+        this.env.setCutsceneStorm(true, lightningIntensity, 1.45);
+      } else if (!this.introImpactDone) {
+        this.introImpactDone = true;
+        sound.playImpactSplat();
+        events.emit('camera:shake', { amount: 1.0 });
+
+        // Ground shockwave: dirt crater, suspension dust, and debris
+        this.debris.burst(this.renderPos.x, 0.15, this.renderPos.z, '#5a4e3e', 48); // Dirt crater
+        this.debris.burst(this.renderPos.x, 0.22, this.renderPos.z, '#8f836f', 36); // Fine dust
+        this.debris.burst(this.renderPos.x, 0.35, this.renderPos.z, '#4a4237', 24); // Soil chunks
+        this.debris.burst(this.renderPos.x, 0.30, this.renderPos.z, '#6a7848', 18); // Toxic earth bits
+      }
+
+      if (t >= tFallEnd && t < tStandEnd) {
+        // Ground level settling fog
+        this.env.setCutsceneStorm(true, 0, 1.15);
+      }
+
+      if (t >= 2.05 && !this.introBreathingDone) {
+        this.introBreathingDone = true;
+        sound.playMaskBreathing();
+      }
+
+      p.object.position.set(this.renderPos.x, fallY, this.renderPos.z);
+      p.object.rotation.y = facing;
+      this.animator.updateIntroCutscene(t);
+
+      // --- CINEMATIC CONTINUOUS DYNAMIC CAMERA ---
+      // A unified, seamless Steadicam path that descends with the character,
+      // catches the ground impact with realistic camera shake, and cranes around smoothly as he rises.
+      let targetYaw: number;
+      let targetPitch: number;
+      let targetDist: number;
+      let targetFocusY: number;
+
+      if (t < tFallEnd) {
+        // Phase 1 (0.00..0.95s): Following the drop downwards with wind turbulence
+        const u = t / tFallEnd;
+        targetYaw = lerp(20, 24, u);
+        targetPitch = lerp(28, 16, smoothstep(0, 1, u));
+        targetDist = lerp(10.5, 5.2, u);
+        targetFocusY = fallY * 0.4 + 0.85;
+      } else if (t < tStandEnd) {
+        // Phase 2 (0.95..2.90s): Ground-level close shot following the impact, prone push-up and kneeling
+        const u = (t - tFallEnd) / (tStandEnd - tFallEnd);
+        const e = smoothstep(0, 1, u);
+        targetYaw = lerp(24, 75, e);
+        targetPitch = lerp(16, 22, e);
+        targetDist = lerp(5.2, 5.8, e);
+        targetFocusY = lerp(0.5, 0.85, e);
+      } else {
+        // Phase 3 (2.90..4.75s): Standing tall, checking mask, and smoothly panning back to gameplay
+        const u = (t - tStandEnd) / (tTotal - tStandEnd);
+        const e = smoothstep(0, 1, u);
+
+        targetYaw = lerp(75, CONFIG.camera.yawDeg, e);
+        targetPitch = lerp(22, CONFIG.camera.pitchDeg, e);
+        targetDist = lerp(5.8, CONFIG.camera.distance, e);
+        targetFocusY = lerp(0.85, 1.0, e);
+      }
+
+      this.focusTarget.set(this.renderPos.x, targetFocusY, this.renderPos.z);
+      this.rig.updateCutscene(dt, this.focusTarget, targetYaw, targetPitch, targetDist);
+
+      this.input.consumeWheel();
+
+      if (t >= tTotal) {
+        this.finishIntro();
+      }
+    } else {
+      p.object.position.copy(this.renderPos);
+      p.object.rotation.y = facing;
+      if (this.state !== 'dead') this.animator.update(dt, p, facing);
+      else p.object.rotation.z = Math.min(Math.PI / 2, p.object.rotation.z + dt * 4);
+
+      this.focusTarget.copy(this.renderPos).setY(1);
+      this.rig.update(
+        dt,
+        this.renderPos,
+        playing && p.hasAimPoint ? p.aimPoint : null,
+        this.input.consumeWheel(),
+      );
+    }
+
     this.world.update(dt, this.renderPos);
     this.weather.update(dt, this.rig.currentFocus);
     this.env.setToxic(this.survival.gas);
@@ -768,7 +899,9 @@ export class Game {
     this.gunBench.update(dt);
     const it = playing ? this.currentInteractable : null;
     this.hud.setPrompt(it ? it.verb : null, it?.label);
+
     this.hud.setCrosshair(this.input.mouseScreen.x, this.input.mouseScreen.y, playing && this.input.mouseInWindow);
+
     const bm = this.buildMode;
     this.buildUI.setBuild(playing && bm.active, bm.tab, bm.selected, bm.placement, this.input.mouseScreen.x, this.input.mouseScreen.y);
     const card = playing && !bm.active && this.hammerTarget && this.building.pieces.has(this.hammerTarget) ? this.hammerTarget : null;

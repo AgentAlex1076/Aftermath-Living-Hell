@@ -16,7 +16,7 @@ npm run dev        # then open http://localhost:5173
 
 | Key | Action |
 | --- | --- |
-| WASD | Move (relative to the screen) |
+| WASD | Move (screen-relative) |
 | Mouse | Aim |
 | Left mouse (hold) | Fire a gun, melee mutants, swing the held tool / fists, or use a consumable |
 | Right mouse (hold) | Aim (tighter spread, slower move) |
@@ -29,7 +29,7 @@ npm run dev        # then open http://localhost:5173
 | B | Build mode: Q switches Structure / Traps / Power, 1–7 pick a piece, left mouse places, R rotates, B or Esc exits |
 | E on a turret / generator / trap | Load a crafted gun, ammo, wood or chemicals |
 | Hammer equipped | Left mouse repairs the piece under the cursor, R upgrades it, hold X to demolish |
-| Mouse wheel | Zoom |
+| Mouse wheel | Zoom camera |
 | Esc | Pause (volume slider and mute are on the pause screen) |
 | M | Mute / unmute |
 | F1 or ` | Debug panel |
