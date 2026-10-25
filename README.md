@@ -16,20 +16,22 @@ npm run dev        # then open http://localhost:5173
 
 | Key | Action |
 | --- | --- |
-| WASD | Move (relative to the screen) |
-| Mouse | Aim |
+| WASD | Move (relative to looking direction in First Person, screen in Top-Down) |
+| Mouse | Look / Aim (Pointer locked in First Person mode) |
 | Left mouse (hold) | Melee mutants, swing the held tool / fists, or use the held consumable |
 | 1 – 6 | Select hotbar slot |
 | I or Tab | Backpack (drag to move, Shift-click to swap rows, right-click to use) |
 | Shift | Sprint (uses stamina) |
 | Space | Dodge roll (uses stamina) |
 | E | Interact / search containers / use the Crafting Table or Oven / open doors and storage boxes |
-| B | Build mode: 1–7 pick a piece, left mouse places, R rotates, B or Esc exits |
+| B | Build mode: 1–7 pick a piece, left mouse places, R rotates, B or Esc exits (smoothly swoops to overhead view in First Person) |
 | Hammer equipped | Left mouse repairs the piece under the cursor, R upgrades it, hold X to demolish |
-| Mouse wheel | Zoom |
+| Mouse wheel | Zoom (Top-Down mode) |
 | Esc | Pause |
 | F1 or ` | Debug panel |
 | H | Hide the controls card |
+
+You can choose between **First Person (FPS)** and **Top-Down (Classic)** on the start screen before beginning your run.
 
 Every run gets a random world. Add `?seed=1234` to the URL to replay a specific one
 (the seed is shown on the pause and death screens).

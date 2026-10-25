@@ -142,7 +142,11 @@ export class Player {
       } else {
         const ease = 1 - t * t * 0.75;
         this.velocity.copy(this.dodgeDir).multiplyScalar(cfg.dodge.speed * ease);
-        this.facing = dampAngle(this.facing, Math.atan2(this.dodgeDir.x, this.dodgeDir.z), 30, dt);
+        if (!cam.isFirstPerson || cam.buildTransition >= 0.5) {
+          this.facing = dampAngle(this.facing, Math.atan2(this.dodgeDir.x, this.dodgeDir.z), 30, dt);
+        } else {
+          this.facing = cam.fpYaw;
+        }
       }
     }
 
@@ -150,7 +154,7 @@ export class Player {
       if (input.wasPressed('dodge') && this.dodgeCooldown <= 0 && this.spendStamina(cfg.dodge.staminaCost)) {
         this.startDodge(moving ? _wish : null);
       } else {
-        this.updateLocomotion(dt, input, moving);
+        this.updateLocomotion(dt, input, moving, cam);
       }
     }
 
@@ -161,10 +165,12 @@ export class Player {
     this.actualVelocity.subVectors(this.position, this.prevPosition).divideScalar(dt);
   }
 
-  private updateLocomotion(dt: number, input: Input, moving: boolean): void {
+  private updateLocomotion(dt: number, input: Input, moving: boolean, cam: CameraRig): void {
     const cfg = CONFIG.player;
 
-    if (this.hasAim) {
+    if (cam.isFirstPerson && cam.buildTransition < 0.5) {
+      this.facing = cam.fpYaw;
+    } else if (this.hasAim) {
       const aimYaw = Math.atan2(this.aimPoint.x - this.position.x, this.aimPoint.z - this.position.z);
       this.facing = dampAngle(this.facing, aimYaw, cfg.turnSpeed, dt);
     } else if (moving) {

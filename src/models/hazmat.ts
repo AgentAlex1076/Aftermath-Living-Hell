@@ -31,7 +31,6 @@ export function buildHazmat(): THREE.Object3D {
     cyl(0.29, 0.29, 0.08, tape, { pos: [0, 0.02, 0], scale: [1.12, 1, 0.86], segments: 18 }),
     box(0.13, 0.11, 0.08, rubber, { pos: [0.21, 0.0, 0.2], rot: [0, 0.35, 0] }),
     box(0.11, 0.1, 0.07, rubber, { pos: [-0.24, 0.0, 0.14], rot: [0, -0.6, 0] }),
-    torus(0.17, 0.04, tape, { pos: [0, 0.66, 0], rot: [Math.PI / 2, 0, 0] }),
   );
 
   const tank = group(
@@ -52,6 +51,7 @@ export function buildHazmat(): THREE.Object3D {
   head.add(
     sphere(0.2, suit, { pos: [0, 0.08, -0.01], scale: [1, 1.08, 1], name: 'hood' }),
     sphere(0.15, mat('maskBody'), { pos: [0, 0.06, 0.11], scale: [1.05, 1, 0.72] }),
+    torus(0.17, 0.04, tape, { pos: [0, -0.06, 0], rot: [Math.PI / 2, 0, 0], name: 'collar' }),
   );
   for (const side of [-1, 1]) {
     head.add(

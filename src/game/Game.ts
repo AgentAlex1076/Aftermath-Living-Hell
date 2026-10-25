@@ -3,7 +3,7 @@ import { CONFIG } from '../data/config';
 import { events } from '../core/EventBus';
 import { GameLoop } from '../core/GameLoop';
 import { Input, type Action } from '../core/Input';
-import { clamp, damp, wrapAngle } from '../core/math';
+import { clamp, damp, lerp, smoothstep, wrapAngle } from '../core/math';
 import { Rng } from '../core/random';
 import { ALL_ITEM_IDS, ITEMS, type ItemDef } from '../data/items';
 import type { EnemyId } from '../data/enemies';
@@ -25,7 +25,8 @@ import { BuildUI, pieceIconKey } from '../ui/BuildUI';
 import { CraftingPanel, OvenPanel, StoragePanel } from '../ui/StationPanels';
 import { models, registerModels } from '../models';
 import { CollisionWorld } from '../physics/Collision';
-import { CameraRig } from '../render/CameraRig';
+import { CameraRig, type PerspectiveMode } from '../render/CameraRig';
+import { FirstPersonViewModel } from '../render/FirstPersonViewModel';
 import { createRenderer } from '../render/createRenderer';
 import { Debris } from '../render/Debris';
 import { Environment } from '../render/Environment';
@@ -38,11 +39,12 @@ import { renderIcons, renderItemIcons } from '../ui/IconRenderer';
 import { HotbarView, InventoryView } from '../ui/InventoryUI';
 import { Minimap } from '../ui/Minimap';
 import { DeathScreen, PauseScreen, StartScreen } from '../ui/Screens';
+import { sound } from '../core/Sound';
 import { InteractionSystem, type Interactable } from '../world/Interactables';
 import { buildStarterArea, type StarterArea } from '../world/StarterArea';
 import { World } from '../world/World';
 
-type GameState = 'title' | 'playing' | 'paused' | 'dead';
+type GameState = 'title' | 'intro' | 'playing' | 'paused' | 'dead';
 
 /** Hotbar slots normally; build bar pieces in build mode (which has a 7th). */
 const HOTBAR_KEYS: Action[] = ['hotbar1', 'hotbar2', 'hotbar3', 'hotbar4', 'hotbar5', 'hotbar6', 'hotbar7'];
@@ -102,7 +104,14 @@ export class Game {
   private readonly deathScreen: DeathScreen;
   private readonly debug: DebugPanel;
 
+  private perspective: PerspectiveMode = 'first-person';
+  private readonly viewModel: FirstPersonViewModel;
+
   private state: GameState = 'title';
+  private introElapsed = 0;
+  private introImpactDone = false;
+  private introHeartbeatDone = false;
+  private introBreathingDone = false;
   private colliderDebug: THREE.LineSegments | null = null;
   private colliderDebugVersion = -1;
   private currentInteractable: Interactable | null = null;
@@ -128,6 +137,9 @@ export class Game {
 
     this.renderer = createRenderer(appRoot);
     this.rig = new CameraRig(window.innerWidth / window.innerHeight);
+    this.scene.add(this.rig.camera);
+    this.viewModel = new FirstPersonViewModel();
+    this.rig.camera.add(this.viewModel.root);
     this.env = new Environment(this.scene, this.seed);
     this.input = new Input(this.renderer.domElement);
     this.lights = new LightPool(this.scene);
@@ -241,7 +253,7 @@ export class Game {
       spawnEnemy: (id) => this.debugSpawn(id),
       toggleFlow: (on) => this.flow.setDebug(this.scene, on),
     });
-    new StartScreen(uiRoot, () => this.beginPlay());
+    new StartScreen(uiRoot, (perspective) => this.beginPlay(perspective));
 
     events.on('camera:shake', ({ amount }) => this.rig.addTrauma(amount));
     events.on('player:dodge', () => this.rig.addTrauma(0.12));
@@ -259,12 +271,53 @@ export class Game {
     this.loop.start();
   }
 
-  private beginPlay(): void {
+  private beginPlay(perspective: PerspectiveMode): void {
     if (this.state !== 'title') return;
-    this.state = 'playing';
-    this.input.enabled = true;
-    this.hud.setVisible(true);
+    this.perspective = perspective;
+    this.rig.setPerspective(perspective);
+    // Keep survivor head and body fully visible during cinematic cutscene
+    this.animator.setFirstPersonMode(false);
+    this.viewModel.setVisible(false);
+    this.state = 'intro';
+    this.introElapsed = 0;
+    this.introImpactDone = false;
+    this.introHeartbeatDone = false;
+    this.introBreathingDone = false;
+    this.input.enabled = false;
+    this.hud.setCutsceneLetterbox(true);
+    this.hud.setVisible(false);
     document.body.classList.add('playing');
+
+    // Horror sound design: toxic wind storm & sky drop roar
+    sound.playHorrorDropStorm();
+    sound.playHeartbeat();
+  }
+
+  private finishIntro(): void {
+    if (this.state !== 'intro') return;
+    this.state = 'playing';
+    this.player.object.position.y = 0;
+    this.env.setCutsceneStorm(false, 0, 1.0);
+    this.input.enabled = true;
+    this.hud.setCutsceneLetterbox(false);
+    this.hud.setVisible(true);
+
+    if (this.perspective === 'first-person') {
+      this.rig.setYaw(this.player.facing);
+      this.rig.fpPitch = 0;
+      this.rig.camera.fov = 76;
+      this.rig.camera.near = 0.08;
+      this.rig.camera.updateProjectionMatrix();
+      this.animator.setFirstPersonMode(true);
+      this.viewModel.setVisible(true);
+      this.input.requestPointerLock();
+      this.hud.setCrosshair(window.innerWidth / 2, window.innerHeight / 2, true);
+    } else {
+      this.animator.setFirstPersonMode(false);
+      this.viewModel.setVisible(false);
+      this.hud.setCrosshair(0, 0, false);
+    }
+
     window.setTimeout(() => events.emit('toast', { text: 'Your gear is in the crate by the door. Grab it.', tone: 'info' }), 700);
     window.setTimeout(() => events.emit('toast', { text: 'Stay close to the hut. Something is moving in the fog.', tone: 'warn' }), 4200);
   }
@@ -276,6 +329,16 @@ export class Game {
     this.input.enabled = !paused;
     this.pauseScreen.setVisible(paused);
     document.body.classList.toggle('playing', !paused);
+
+    if (this.perspective === 'first-person') {
+      if (paused) {
+        this.input.exitPointerLock();
+        this.hud.setCrosshair(0, 0, false);
+      } else if (!this.buildMode.active && !this.inventoryView.open) {
+        this.input.requestPointerLock();
+        this.hud.setCrosshair(window.innerWidth / 2, window.innerHeight / 2, true);
+      }
+    }
   }
 
   /** Opens the backpack with the crafting, oven or storage box panel beside it. */
@@ -295,6 +358,16 @@ export class Game {
     this.inventoryView.setOpen(open);
     this.input.enabled = !open;
     document.body.classList.toggle('playing', !open);
+
+    if (this.perspective === 'first-person') {
+      if (open) {
+        this.input.exitPointerLock();
+        this.hud.setCrosshair(0, 0, false);
+      } else if (!this.buildMode.active && this.state === 'playing') {
+        this.input.requestPointerLock();
+        this.hud.setCrosshair(window.innerWidth / 2, window.innerHeight / 2, true);
+      }
+    }
   }
 
   private setBuildMode(on: boolean): void {
@@ -306,6 +379,25 @@ export class Game {
     if (on && !this.shownBuildHint) {
       this.shownBuildHint = true;
       events.emit('toast', { text: 'Foundations go down first. Walls snap to their edges.', tone: 'info' });
+    }
+
+    if (this.perspective === 'first-person') {
+      this.rig.setBuildMode(on);
+      if (on) {
+        this.input.exitPointerLock();
+        this.hud.setCrosshair(0, 0, false);
+        this.animator.setArmsVisible(true);
+        this.animator.setHeadVisible(false);
+        this.viewModel.setVisible(false);
+      } else {
+        if (this.state === 'playing' && !this.inventoryView.open) {
+          this.input.requestPointerLock();
+          this.hud.setCrosshair(window.innerWidth / 2, window.innerHeight / 2, true);
+        }
+        this.animator.setArmsVisible(false);
+        this.animator.setHeadVisible(false);
+        this.viewModel.setVisible(true);
+      }
     }
   }
 
@@ -371,6 +463,10 @@ export class Game {
     this.state = 'dead';
     this.inventoryView.setOpen(false);
     this.input.enabled = false;
+    this.input.exitPointerLock();
+    this.hud.setCrosshair(0, 0, false);
+    this.animator.setHeadVisible(true);
+    this.viewModel.setVisible(false);
     document.body.classList.remove('playing');
     events.emit('camera:shake', { amount: 0.8 });
     window.setTimeout(() => {
@@ -400,6 +496,7 @@ export class Game {
       this.heldModels.set(id, model);
     }
     this.animator.setHeld(model);
+    this.viewModel.setHeld(id ? models.create(id, 1) : null, id);
   }
 
   private fixedUpdate(dt: number): void {
@@ -460,6 +557,13 @@ export class Game {
       this.hasGroundHit = false;
       return;
     }
+    if (this.perspective === 'first-person' && this.rig.buildTransition < 0.5) {
+      this.raycaster.setFromCamera(new THREE.Vector2(0, 0), this.rig.camera);
+      const hit = this.raycaster.ray.intersectPlane(this.aimPlane, this.aimHit);
+      this.player.setAim(hit);
+      this.hasGroundHit = this.raycaster.ray.intersectPlane(this.groundPlane, this.groundHit) !== null;
+      return;
+    }
     this.mouseNdc.set(this.input.mouseNdc.x, this.input.mouseNdc.y);
     this.raycaster.setFromCamera(this.mouseNdc, this.rig.camera);
     const hit = this.raycaster.ray.intersectPlane(this.aimPlane, this.aimHit);
@@ -481,15 +585,161 @@ export class Game {
     const dt = this.state === 'paused' ? 0 : frameDt * this.loop.timeScale;
     const p = this.player;
 
+    const mouseDelta = this.input.consumeMouseDelta();
+
     this.renderPos.lerpVectors(p.prevPosition, p.position, alpha);
     const facing = p.prevFacing + wrapAngle(p.facing - p.prevFacing) * alpha;
-    p.object.position.copy(this.renderPos);
-    p.object.rotation.y = facing;
-    if (this.state !== 'dead') this.animator.update(dt, p, facing);
-    else p.object.rotation.z = Math.min(Math.PI / 2, p.object.rotation.z + dt * 4);
 
-    this.focusTarget.copy(this.renderPos).setY(1);
-    this.rig.update(dt, this.focusTarget, playing && p.hasAimPoint ? p.aimPoint : null, this.input.consumeWheel());
+    if (this.state === 'intro') {
+      this.introElapsed += dt;
+      const t = this.introElapsed;
+      const tFallEnd = 0.95;
+      const tStandEnd = 2.90;
+      const tTotal = 4.75;
+
+      let fallY = 0;
+      let lightningIntensity = 0;
+
+      if (t < tFallEnd) {
+        const u = clamp(t / tFallEnd, 0, 1);
+        // Accelerating gravity drop from high in the sky (36m -> 0m)
+        fallY = 36 * (1 - u * u);
+
+        // Toxic thunderstorm: lightning flashes around t=0.25 and t=0.65
+        if ((t > 0.22 && t < 0.32) || (t > 0.62 && t < 0.72)) {
+          lightningIntensity = Math.sin(t * 35) > 0 ? 1.0 : 0.4;
+          if (t > 0.62 && !this.introHeartbeatDone) {
+            this.introHeartbeatDone = true;
+            sound.playThunder();
+            sound.playHeartbeat();
+          }
+        }
+        // Thicker fog and volumetric light shafts in upper atmosphere
+        this.env.setCutsceneStorm(true, lightningIntensity, 1.45);
+      } else if (!this.introImpactDone) {
+        this.introImpactDone = true;
+        sound.playImpactSplat();
+        events.emit('camera:shake', { amount: 1.0 });
+
+        // Ground shockwave: dirt crater, suspension dust, and debris
+        this.debris.burst(this.renderPos.x, 0.15, this.renderPos.z, '#5a4e3e', 48); // Dirt crater
+        this.debris.burst(this.renderPos.x, 0.22, this.renderPos.z, '#8f836f', 36); // Fine dust
+        this.debris.burst(this.renderPos.x, 0.35, this.renderPos.z, '#4a4237', 24); // Soil chunks
+        this.debris.burst(this.renderPos.x, 0.30, this.renderPos.z, '#6a7848', 18); // Toxic earth bits
+      }
+
+      if (t >= tFallEnd && t < tStandEnd) {
+        // Ground level settling fog
+        this.env.setCutsceneStorm(true, 0, 1.15);
+      }
+
+      if (t >= 2.05 && !this.introBreathingDone) {
+        this.introBreathingDone = true;
+        sound.playMaskBreathing();
+      }
+
+      p.object.position.set(this.renderPos.x, fallY, this.renderPos.z);
+      p.object.rotation.y = facing;
+      this.animator.updateIntroCutscene(t);
+
+      // --- CINEMATIC CONTINUOUS DYNAMIC CAMERA ---
+      // A unified, seamless Steadicam path that descends with the character,
+      // catches the ground impact with realistic camera shake, and cranes around smoothly as he rises.
+      let targetYaw: number;
+      let targetPitch: number;
+      let targetDist: number;
+      let targetFocusY: number;
+
+      if (t < tFallEnd) {
+        // Phase 1 (0.00..0.95s): Following the drop downwards with wind turbulence
+        const u = t / tFallEnd;
+        targetYaw = lerp(20, 24, u);
+        targetPitch = lerp(28, 16, smoothstep(0, 1, u));
+        targetDist = lerp(10.5, 5.2, u);
+        targetFocusY = fallY * 0.4 + 0.85;
+      } else if (t < tStandEnd) {
+        // Phase 2 (0.95..2.90s): Ground-level close shot following the impact, prone push-up and kneeling
+        const u = (t - tFallEnd) / (tStandEnd - tFallEnd);
+        const e = smoothstep(0, 1, u);
+        targetYaw = lerp(24, 75, e);
+        targetPitch = lerp(16, 22, e);
+        targetDist = lerp(5.2, 5.8, e);
+        targetFocusY = lerp(0.5, 0.85, e);
+      } else {
+        // Phase 3 (2.90..4.75s): Standing tall, checking mask, and smoothly panning back to gameplay
+        const u = (t - tStandEnd) / (tTotal - tStandEnd);
+        const e = smoothstep(0, 1, u);
+
+        if (this.perspective === 'first-person') {
+          targetYaw = 75;
+          targetPitch = 22;
+          targetDist = 5.8;
+          targetFocusY = 0.85;
+        } else {
+          targetYaw = lerp(75, CONFIG.camera.yawDeg, e);
+          targetPitch = lerp(22, CONFIG.camera.pitchDeg, e);
+          targetDist = lerp(5.8, CONFIG.camera.distance, e);
+          targetFocusY = lerp(0.85, 1.0, e);
+        }
+      }
+
+      if (this.perspective === 'first-person') {
+        const panStart = 3.65;
+        if (t >= panStart) {
+          const panProgress = smoothstep(panStart, tTotal, t);
+          this.rig.updateCutscenePanToFirstPerson(dt, this.renderPos, facing, panProgress, 75, 22, 5.8, 0.85);
+          // Keep head visible until the camera has reached the eye socket at the very end of the cutscene
+          this.animator.setFirstPersonMode(panProgress >= 0.98);
+        } else {
+          this.animator.setFirstPersonMode(false);
+          this.focusTarget.set(this.renderPos.x, targetFocusY, this.renderPos.z);
+          this.rig.updateCutscene(dt, this.focusTarget, targetYaw, targetPitch, targetDist);
+        }
+      } else {
+        this.animator.setFirstPersonMode(false);
+        this.focusTarget.set(this.renderPos.x, targetFocusY, this.renderPos.z);
+        this.rig.updateCutscene(dt, this.focusTarget, targetYaw, targetPitch, targetDist);
+      }
+
+      this.input.consumeWheel();
+
+      if (t >= tTotal) {
+        this.finishIntro();
+      }
+    } else {
+      p.object.position.copy(this.renderPos);
+      p.object.rotation.y = facing;
+      if (this.state !== 'dead') this.animator.update(dt, p, facing);
+      else p.object.rotation.z = Math.min(Math.PI / 2, p.object.rotation.z + dt * 4);
+
+      this.focusTarget.copy(this.renderPos).setY(1);
+      this.rig.update(
+        dt,
+        this.renderPos,
+        playing && p.hasAimPoint ? p.aimPoint : null,
+        this.input.consumeWheel(),
+        mouseDelta.x,
+        mouseDelta.y,
+        p.dodgeProgress,
+      );
+
+      if (this.perspective === 'first-person') {
+        const inTopDownBuild = this.rig.buildTransition > 0.5;
+        this.animator.setArmsVisible(inTopDownBuild);
+        this.animator.setHeadVisible(false);
+      }
+    }
+
+    const moving = p.actualVelocity.lengthSq() > 0.05;
+    this.viewModel.update(
+      dt,
+      p,
+      moving,
+      p.sprinting,
+      this.perspective === 'first-person',
+      this.rig.buildTransition,
+    );
+
     this.world.update(dt, this.renderPos);
     this.env.setToxic(this.survival.gas);
     this.env.update(dt, this.rig.currentFocus);
@@ -528,7 +778,14 @@ export class Game {
     this.hud.setRaid(this.raid.active, this.raid.timeLeft, this.raid.raidNumber, this.horde.raidAlive);
     const it = playing ? this.currentInteractable : null;
     this.hud.setPrompt(it ? it.verb : null, it?.label);
-    this.hud.setCrosshair(this.input.mouseScreen.x, this.input.mouseScreen.y, playing && this.input.mouseInWindow);
+
+    if (this.perspective === 'first-person') {
+      const showCrosshair = playing && !this.buildMode.active && p.alive && this.rig.buildTransition < 0.2;
+      this.hud.setCrosshair(window.innerWidth / 2, window.innerHeight / 2, showCrosshair);
+    } else {
+      this.hud.setCrosshair(this.input.mouseScreen.x, this.input.mouseScreen.y, playing && this.input.mouseInWindow);
+    }
+
     const bm = this.buildMode;
     this.buildUI.setBuild(playing && bm.active, bm.selected, bm.placement, this.input.mouseScreen.x, this.input.mouseScreen.y);
     const card = playing && !bm.active && this.hammerTarget && this.building.pieces.has(this.hammerTarget) ? this.hammerTarget : null;

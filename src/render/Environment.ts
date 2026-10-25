@@ -13,6 +13,7 @@ const ASH_BOX = { x: 70, y: 22, z: 70 };
 /** Sky, fog, lighting and ambient falling ash. Follows the camera focus. */
 export class Environment {
   readonly sun: THREE.DirectionalLight;
+  private readonly hemi: THREE.HemisphereLight;
   private readonly fog: THREE.FogExp2;
   private readonly background: THREE.Color;
   private readonly sunOffset = new THREE.Vector3(-18, 34, 12);
@@ -20,6 +21,9 @@ export class Environment {
   private readonly ashSpeeds: Float32Array;
   private toxic = 0;
   private toxicTarget = 0;
+  private cutsceneActive = false;
+  private cutsceneLightning = 0;
+  private cutsceneFogMult = 1.0;
   private time = 0;
 
   constructor(scene: THREE.Scene, seed: number) {
@@ -28,8 +32,8 @@ export class Environment {
     this.fog = new THREE.FogExp2(FOG_COLOR.clone(), FOG_DENSITY);
     scene.fog = this.fog;
 
-    const hemi = new THREE.HemisphereLight('#a3ada6', '#3b352b', 1.7);
-    scene.add(hemi);
+    this.hemi = new THREE.HemisphereLight('#a3ada6', '#3b352b', 1.7);
+    scene.add(this.hemi);
 
     this.sun = new THREE.DirectionalLight('#d2d8cb', 2.1);
     this.sun.castShadow = true;
@@ -52,6 +56,13 @@ export class Environment {
     scene.add(this.ash);
   }
 
+  /** Controls atmospheric cutscene storm intensity, subtle lightning ambient flash, and fog density */
+  setCutsceneStorm(active: boolean, lightningIntensity: number, fogDensityMult = 1.0): void {
+    this.cutsceneActive = active;
+    this.cutsceneLightning = lightningIntensity;
+    this.cutsceneFogMult = fogDensityMult;
+  }
+
   /** 0..1 how deep the player is in gas; tints and thickens the fog. */
   setToxic(amount: number): void {
     this.toxicTarget = Math.min(1, amount);
@@ -67,8 +78,22 @@ export class Environment {
     this.sun.position.set(fx + this.sunOffset.x, this.sunOffset.y, fz + this.sunOffset.z);
 
     this.toxic = damp(this.toxic, this.toxicTarget, 2.5, dt);
-    this.fog.color.copy(FOG_COLOR).lerp(TOXIC_FOG_COLOR, this.toxic);
-    this.fog.density = FOG_DENSITY + (TOXIC_FOG_DENSITY - FOG_DENSITY) * this.toxic;
+    const baseFogColor = FOG_COLOR.clone().lerp(TOXIC_FOG_COLOR, this.toxic);
+
+    if (this.cutsceneActive && this.cutsceneLightning > 0.01) {
+      // Lightning flash illumination
+      const flashColor = new THREE.Color('#e0ffea').lerp(new THREE.Color('#ffffff'), 0.5);
+      this.fog.color.copy(baseFogColor).lerp(flashColor, this.cutsceneLightning * 0.85);
+      this.sun.intensity = 2.1 + this.cutsceneLightning * 5.0;
+      this.hemi.intensity = 1.7 + this.cutsceneLightning * 3.5;
+    } else {
+      this.fog.color.copy(baseFogColor);
+      this.sun.intensity = 2.1;
+      this.hemi.intensity = 1.7;
+    }
+
+    const baseDensity = FOG_DENSITY + (TOXIC_FOG_DENSITY - FOG_DENSITY) * this.toxic;
+    this.fog.density = baseDensity * this.cutsceneFogMult;
     this.background.copy(this.fog.color);
 
     this.updateAsh(dt, focus);
