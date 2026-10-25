@@ -55,7 +55,6 @@ export class MetaOverlay {
     this.root.innerHTML = `
       <div class="meta-frame">
         <div class="meta-head">
-          <div class="meta-kicker">AFTERMATH FILES</div>
           <div class="meta-title"></div>
           <div class="meta-progress"></div>
         </div>
