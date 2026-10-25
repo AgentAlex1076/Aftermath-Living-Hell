@@ -1,0 +1,243 @@
+import * as THREE from 'three';
+import { CONFIG } from '../data/config';
+import { FLOORABLE_TAG, HALF_TAG, type CollisionWorld } from '../physics/Collision';
+
+const R = CONFIG.raid.fieldRadius;
+const CELL = CONFIG.raid.fieldCell;
+const N = Math.ceil((R * 2) / CELL);
+const GOAL = Math.floor(N / 2);
+
+const DIRS: [number, number, number][] = [
+  [1, 0, 1], [-1, 0, 1], [0, 1, 1], [0, -1, 1],
+  [1, 1, 1.414], [1, -1, 1.414], [-1, 1, 1.414], [-1, -1, 1.414],
+];
+
+const IGNORE_WALK = [FLOORABLE_TAG];
+const IGNORE_CRAWL = [FLOORABLE_TAG, HALF_TAG];
+
+/**
+ * A pair of flow fields covering the Home Zone and the spawn ring: one for walking mutants,
+ * one that treats half-walls as open so crawlers can slip through. Rebuilt when colliders change.
+ */
+export class FlowField {
+  private readonly walkCost: Float32Array;
+  private readonly crawlCost: Float32Array;
+  private readonly walkDir: Float32Array;
+  private readonly crawlDir: Float32Array;
+  private lastVersion = -1;
+  private cooldown = 0;
+  debug: THREE.LineSegments | null = null;
+
+  constructor(private readonly collision: CollisionWorld) {
+    const cells = N * N;
+    this.walkCost = new Float32Array(cells);
+    this.crawlCost = new Float32Array(cells);
+    this.walkDir = new Float32Array(cells * 2);
+    this.crawlDir = new Float32Array(cells * 2);
+    this.rebuild();
+  }
+
+  /** Call every tick. Rebuilds at most a few times a second after the collision world changes. */
+  update(dt: number): void {
+    this.cooldown = Math.max(0, this.cooldown - dt);
+    if (this.collision.version !== this.lastVersion && this.cooldown <= 0) {
+      this.rebuild();
+      this.cooldown = 0.28;
+    }
+  }
+
+  /** Unit ground direction toward the hut, or (0,0) if this spot is boxed in. */
+  sample(x: number, z: number, crawl = false): { x: number; z: number } {
+    const gx = x / CELL + GOAL;
+    const gz = z / CELL + GOAL;
+    const x0 = Math.floor(gx);
+    const z0 = Math.floor(gz);
+    const tx = gx - x0;
+    const tz = gz - z0;
+    const dir = crawl ? this.crawlDir : this.walkDir;
+    const ax = this.dirAt(dir, x0, z0, 0);
+    const az = this.dirAt(dir, x0, z0, 1);
+    const bx = this.dirAt(dir, x0 + 1, z0, 0);
+    const bz = this.dirAt(dir, x0 + 1, z0, 1);
+    const cx = this.dirAt(dir, x0, z0 + 1, 0);
+    const cz = this.dirAt(dir, x0, z0 + 1, 1);
+    const dx = this.dirAt(dir, x0 + 1, z0 + 1, 0);
+    const dz = this.dirAt(dir, x0 + 1, z0 + 1, 1);
+    let fx = ax * (1 - tx) * (1 - tz) + bx * tx * (1 - tz) + cx * (1 - tx) * tz + dx * tx * tz;
+    let fz = az * (1 - tx) * (1 - tz) + bz * tx * (1 - tz) + cz * (1 - tx) * tz + dz * tx * tz;
+    const len = Math.hypot(fx, fz);
+    if (len < 0.05) return { x: 0, z: 0 };
+    return { x: fx / len, z: fz / len };
+  }
+
+  private dirAt(dir: Float32Array, ix: number, iz: number, axis: 0 | 1): number {
+    if (ix < 0 || iz < 0 || ix >= N || iz >= N) return 0;
+    return dir[(iz * N + ix) * 2 + axis];
+  }
+
+  rebuild(): void {
+    this.lastVersion = this.collision.version;
+    integrate(this.collision, this.walkCost, this.walkDir, IGNORE_WALK);
+    integrate(this.collision, this.crawlCost, this.crawlDir, IGNORE_CRAWL);
+    if (this.debug?.visible) this.rebuildDebug();
+  }
+
+  setDebug(scene: THREE.Scene, on: boolean): void {
+    if (on && !this.debug) {
+      this.debug = new THREE.LineSegments(
+        new THREE.BufferGeometry(),
+        new THREE.LineBasicMaterial({ vertexColors: true, transparent: true, opacity: 0.75, depthTest: false }),
+      );
+      this.debug.renderOrder = 997;
+      this.debug.name = 'flow-debug';
+      scene.add(this.debug);
+    }
+    if (this.debug) this.debug.visible = on;
+    if (on) this.rebuildDebug();
+  }
+
+  private rebuildDebug(): void {
+    if (!this.debug) return;
+    const pts: number[] = [];
+    const cols: number[] = [];
+    const step = 2;
+    for (let iz = 0; iz < N; iz += step) {
+      for (let ix = 0; ix < N; ix += step) {
+        const i = iz * N + ix;
+        const dx = this.walkDir[i * 2];
+        const dz = this.walkDir[i * 2 + 1];
+        const x = (ix - GOAL) * CELL;
+        const z = (iz - GOAL) * CELL;
+        const blocked = this.walkCost[i] >= 1e8;
+        pts.push(x, 0.12, z, x + dx * CELL * 0.7, 0.12, z + dz * CELL * 0.7);
+        if (blocked) cols.push(1, 0.2, 0.15, 1, 0.2, 0.15);
+        else cols.push(0.2, 1, 0.35, 1, 0.85, 0.15);
+      }
+    }
+    this.debug.geometry.dispose();
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute('position', new THREE.Float32BufferAttribute(pts, 3));
+    geo.setAttribute('color', new THREE.Float32BufferAttribute(cols, 3));
+    this.debug.geometry = geo;
+  }
+}
+
+function integrate(world: CollisionWorld, cost: Float32Array, dir: Float32Array, ignore: readonly string[]): void {
+  const blocked = new Uint8Array(N * N);
+  for (let iz = 0; iz < N; iz++) {
+    for (let ix = 0; ix < N; ix++) {
+      const x = (ix - GOAL) * CELL;
+      const z = (iz - GOAL) * CELL;
+      blocked[iz * N + ix] = world.blockedAt(x, z, CELL * 0.42, ignore) ? 1 : 0;
+    }
+  }
+
+  cost.fill(1e9);
+  dir.fill(0);
+  // The hut walls would trap a single seed in the interior, so every open cell in the
+  // yard (and the hut doorway) is a goal. The wave then floods outward from the Home Zone.
+  const seedR2 = (5.5 / CELL) ** 2;
+  const seeds: number[] = [];
+  for (let iz = 0; iz < N; iz++) {
+    for (let ix = 0; ix < N; ix++) {
+      const i = iz * N + ix;
+      if (blocked[i]) continue;
+      if ((ix - GOAL) ** 2 + (iz - GOAL) ** 2 <= seedR2) seeds.push(i);
+    }
+  }
+  if (seeds.length === 0) {
+    let best = Infinity;
+    let seed = GOAL * N + GOAL;
+    for (let i = 0; i < blocked.length; i++) {
+      if (blocked[i]) continue;
+      const ix = i % N;
+      const iz = (i - ix) / N;
+      const d = (ix - GOAL) ** 2 + (iz - GOAL) ** 2;
+      if (d < best) {
+        best = d;
+        seed = i;
+      }
+    }
+    seeds.push(seed);
+  }
+
+  const heap: number[] = [];
+  const push = (i: number) => {
+    heap.push(i);
+    let k = heap.length - 1;
+    while (k > 0) {
+      const p = (k - 1) >> 1;
+      if (cost[heap[p]] <= cost[heap[k]]) break;
+      const t = heap[p];
+      heap[p] = heap[k];
+      heap[k] = t;
+      k = p;
+    }
+  };
+  const pop = (): number => {
+    const top = heap[0];
+    const last = heap.pop()!;
+    if (heap.length === 0) return top;
+    heap[0] = last;
+    let k = 0;
+    for (;;) {
+      let s = k;
+      const l = k * 2 + 1;
+      const r = l + 1;
+      if (l < heap.length && cost[heap[l]] < cost[heap[s]]) s = l;
+      if (r < heap.length && cost[heap[r]] < cost[heap[s]]) s = r;
+      if (s === k) break;
+      const t = heap[k];
+      heap[k] = heap[s];
+      heap[s] = t;
+      k = s;
+    }
+    return top;
+  };
+
+  for (const seed of seeds) {
+    cost[seed] = 0;
+    push(seed);
+  }
+  while (heap.length) {
+    const i = pop();
+    const ix = i % N;
+    const iz = (i - ix) / N;
+    for (const [dx, dz, w] of DIRS) {
+      const nx = ix + dx;
+      const nz = iz + dz;
+      if (nx < 0 || nz < 0 || nx >= N || nz >= N) continue;
+      const j = nz * N + nx;
+      if (blocked[j]) continue;
+      const next = cost[i] + w;
+      if (next < cost[j]) {
+        cost[j] = next;
+        push(j);
+      }
+    }
+  }
+
+  for (let iz = 0; iz < N; iz++) {
+    for (let ix = 0; ix < N; ix++) {
+      const i = iz * N + ix;
+      if (blocked[i] || cost[i] >= 1e8) continue;
+      let best = cost[i];
+      let bx = 0;
+      let bz = 0;
+      for (const [dx, dz] of DIRS) {
+        const nx = ix + dx;
+        const nz = iz + dz;
+        if (nx < 0 || nz < 0 || nx >= N || nz >= N) continue;
+        const c = cost[nz * N + nx];
+        if (c < best) {
+          best = c;
+          bx = dx;
+          bz = dz;
+        }
+      }
+      const len = Math.hypot(bx, bz) || 1;
+      dir[i * 2] = bx / len;
+      dir[i * 2 + 1] = bz / len;
+    }
+  }
+}

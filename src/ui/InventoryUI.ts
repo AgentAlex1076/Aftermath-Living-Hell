@@ -1,0 +1,298 @@
+import { ITEMS, type ItemDef } from '../data/items';
+import type { Inventory, Stack } from '../gameplay/Inventory';
+import { el, q } from './dom';
+
+type Icons = Record<string, string>;
+
+function fillSlot(node: HTMLElement, stack: Stack | null, icons: Icons): void {
+  const key = stack ? `${stack.item}:${stack.qty}` : '';
+  if (node.dataset.key === key) return;
+  node.dataset.key = key;
+  node.classList.toggle('empty', !stack);
+  const icon = q(node, '.slot-icon');
+  const qty = q(node, '.slot-qty');
+  icon.style.backgroundImage = stack && icons[stack.item] ? `url(${icons[stack.item]})` : 'none';
+  qty.textContent = stack && stack.qty > 1 ? String(stack.qty) : '';
+}
+
+function slotNode(index: number, label?: string): HTMLElement {
+  const node = el('div', 'slot empty');
+  node.dataset.index = String(index);
+  node.innerHTML = `<span class="slot-icon"></span><span class="slot-qty"></span>${label ? `<span class="slot-key">${label}</span>` : ''}`;
+  return node;
+}
+
+function describe(def: ItemDef): string {
+  const lines: string[] = [];
+  if (def.tool?.kind === 'hammer') lines.push('<span class="tt-stat">REPAIR · UPGRADE · DEMOLISH</span>');
+  else if (def.tool) lines.push(`<span class="tt-stat">${def.tool.kind.toUpperCase()} · POWER ${def.tool.power} · ${(1 / def.tool.swingTime).toFixed(1)} SWINGS/S</span>`);
+  if (def.consumable?.heal) lines.push(`<span class="tt-stat">${def.consumable.heal > 0 ? '+' : ''}${def.consumable.heal} HEALTH</span>`);
+  if (def.consumable?.filter) lines.push(`<span class="tt-stat">+${def.consumable.filter} FILTER</span>`);
+  return lines.join('');
+}
+
+/** The always-visible hotbar at the bottom of the screen. */
+export class HotbarView {
+  private readonly root: HTMLDivElement;
+  private readonly slots: HTMLElement[] = [];
+  private readonly nameTag: HTMLElement;
+  private nameTimer = 0;
+  private lastSelected = '';
+
+  constructor(parent: HTMLElement, private readonly inv: Inventory, private readonly icons: Icons) {
+    this.root = el('div', 'hotbar');
+    this.nameTag = el('div', 'hotbar-name');
+    this.root.appendChild(this.nameTag);
+    const row = el('div', 'hotbar-row');
+    for (let i = 0; i < inv.hotbarSize; i++) {
+      const s = slotNode(i, String(i + 1));
+      this.slots.push(s);
+      row.appendChild(s);
+    }
+    this.root.appendChild(row);
+    parent.appendChild(this.root);
+    inv.onChange(() => this.refresh());
+    this.refresh();
+  }
+
+  refresh(): void {
+    this.slots.forEach((s, i) => {
+      fillSlot(s, this.inv.slots[i], this.icons);
+      s.classList.toggle('selected', i === this.inv.selected);
+    });
+    const st = this.inv.selectedStack;
+    const key = `${this.inv.selected}:${st?.item ?? ''}`;
+    if (key !== this.lastSelected) {
+      this.lastSelected = key;
+      this.nameTag.textContent = st ? (ITEMS[st.item] as ItemDef).name.toUpperCase() : 'BARE HANDS';
+      this.nameTag.classList.remove('show');
+      void this.nameTag.offsetWidth;
+      this.nameTag.classList.add('show');
+      window.clearTimeout(this.nameTimer);
+      this.nameTimer = window.setTimeout(() => this.nameTag.classList.remove('show'), 1400);
+    }
+  }
+}
+
+interface SlotRef {
+  inv: Inventory;
+  i: number;
+}
+
+interface OpenContainer {
+  inv: Inventory;
+  slots: HTMLElement[];
+  off: () => void;
+}
+
+/**
+ * Backpack panel: drag and drop, shift-click to move, right-click to use. While a storage box is
+ * open its slots join in: drag between them, or shift/right-click to send a stack across.
+ */
+export class InventoryView {
+  private readonly root: HTMLDivElement;
+  private readonly slots: HTMLElement[] = [];
+  private readonly tooltip: HTMLElement;
+  private readonly ghost: HTMLElement;
+  private readonly hint: HTMLElement;
+  private dragFrom: SlotRef | null = null;
+  private container: OpenContainer | null = null;
+  private isOpen = false;
+
+  constructor(
+    parent: HTMLElement,
+    private readonly inv: Inventory,
+    private readonly icons: Icons,
+    private readonly onUse: (index: number) => void,
+  ) {
+    this.root = el('div', 'inventory');
+    this.root.innerHTML = `
+      <div class="inv-layout">
+        <div class="inv-panel">
+          <div class="inv-header"><span class="inv-title">BACKPACK</span><span class="inv-hint"></span></div>
+          <div class="inv-grid backpack"></div>
+          <div class="inv-sub">HOTBAR</div>
+          <div class="inv-grid hotbar-grid"></div>
+        </div>
+        <div class="inv-side"></div>
+      </div>
+      <div class="inv-tooltip"></div>
+    `;
+    parent.appendChild(this.root);
+    this.root.inert = true;
+    const backpack = q(this.root, '.backpack');
+    const hotbar = q(this.root, '.hotbar-grid');
+    for (let i = 0; i < inv.size; i++) {
+      const s = slotNode(i, i < inv.hotbarSize ? String(i + 1) : undefined);
+      this.slots.push(s);
+      (i < inv.hotbarSize ? hotbar : backpack).appendChild(s);
+    }
+    this.tooltip = q(this.root, '.inv-tooltip');
+    this.hint = q(this.root, '.inv-hint');
+    this.ghost = el('div', 'drag-ghost');
+    this.root.appendChild(this.ghost);
+    this.updateHint();
+
+    this.root.addEventListener('pointerdown', this.onPointerDown);
+    window.addEventListener('pointermove', this.onPointerMove);
+    window.addEventListener('pointerup', this.onPointerUp);
+    this.root.addEventListener('contextmenu', (e) => {
+      e.preventDefault();
+      const ref = this.slotAt(e.target);
+      if (!ref) return;
+      if (this.container) this.sendAcross(ref);
+      else this.onUse(ref.i);
+    });
+    this.root.addEventListener('pointerover', (e) => this.showTooltip(this.slotAt(e.target)));
+    this.root.addEventListener('pointerleave', () => this.showTooltip(null));
+
+    inv.onChange(() => {
+      if (this.isOpen) this.refresh();
+    });
+  }
+
+  get open(): boolean {
+    return this.isOpen;
+  }
+
+  /** Container to the right of the backpack, where the crafting, oven or storage panel lives. */
+  get side(): HTMLElement {
+    return q(this.root, '.inv-side');
+  }
+
+  setOpen(open: boolean): void {
+    this.isOpen = open;
+    this.root.classList.toggle('open', open);
+    this.root.inert = !open;
+    if (open) this.refresh();
+    else {
+      this.cancelDrag();
+      this.showTooltip(null);
+    }
+  }
+
+  /** Shows a storage container's slots inside `grid` (or removes them with null). */
+  setContainer(inv: Inventory | null, grid?: HTMLElement): void {
+    this.cancelDrag();
+    if (this.container) {
+      this.container.off();
+      for (const s of this.container.slots) s.remove();
+      this.container = null;
+    }
+    if (inv && grid) {
+      const slots: HTMLElement[] = [];
+      for (let i = 0; i < inv.size; i++) {
+        const s = slotNode(i);
+        s.dataset.container = '1';
+        slots.push(s);
+        grid.appendChild(s);
+      }
+      const off = inv.onChange(() => {
+        if (this.isOpen) this.refresh();
+      });
+      this.container = { inv, slots, off };
+    }
+    this.updateHint();
+    if (this.isOpen) this.refresh();
+  }
+
+  private updateHint(): void {
+    this.hint.textContent = this.container
+      ? 'DRAG BETWEEN BAGS · SHIFT- OR RIGHT-CLICK TO SEND ACROSS'
+      : 'DRAG TO MOVE · SHIFT-CLICK TO SWAP ROWS · RIGHT-CLICK TO USE';
+  }
+
+  private refresh(): void {
+    this.slots.forEach((s, i) => {
+      fillSlot(s, this.inv.slots[i], this.icons);
+      s.classList.toggle('selected', i === this.inv.selected);
+    });
+    const c = this.container;
+    if (c) c.slots.forEach((s, i) => fillSlot(s, c.inv.slots[i], this.icons));
+  }
+
+  private slotAt(target: EventTarget | Element | null): SlotRef | null {
+    const slot = target instanceof Element ? (target.closest('.slot') as HTMLElement | null) : null;
+    if (!slot || !this.root.contains(slot)) return null;
+    const i = Number(slot.dataset.index);
+    if (slot.dataset.container) return this.container ? { inv: this.container.inv, i } : null;
+    return { inv: this.inv, i };
+  }
+
+  private nodeOf(ref: SlotRef): HTMLElement | undefined {
+    return ref.inv === this.inv ? this.slots[ref.i] : this.container?.slots[ref.i];
+  }
+
+  /** Shift/right-click with a box open: moves the stack to the other side. */
+  private sendAcross(ref: SlotRef): void {
+    const c = this.container;
+    if (!c) return;
+    const to = ref.inv === this.inv ? c.inv : this.inv;
+    if (!ref.inv.transfer(ref.i, to)) this.flashFull(to);
+  }
+
+  private flashFull(target: Inventory): void {
+    const nodes = target === this.inv ? this.slots : this.container?.slots;
+    nodes?.forEach((n) => {
+      n.classList.remove('full-flash');
+      void n.offsetWidth;
+      n.classList.add('full-flash');
+    });
+  }
+
+  private showTooltip(ref: SlotRef | null): void {
+    const st = ref ? ref.inv.slots[ref.i] : null;
+    const node = ref ? this.nodeOf(ref) : undefined;
+    if (!st || !node) {
+      this.tooltip.classList.remove('on');
+      return;
+    }
+    const def: ItemDef = ITEMS[st.item];
+    this.tooltip.innerHTML = `<div class="tt-name" style="--c:${def.color}">${def.name.toUpperCase()}</div><div class="tt-kind">${def.kind}</div>${describe(def)}<p>${def.description}</p>`;
+    const r = node.getBoundingClientRect();
+    const right = r.right + 12 + 270 < window.innerWidth;
+    this.tooltip.style.left = right ? `${r.right + 12}px` : `${r.left - 12 - 270}px`;
+    this.tooltip.style.top = `${r.top}px`;
+    this.tooltip.classList.add('on');
+  }
+
+  private onPointerDown = (e: PointerEvent): void => {
+    if (!this.isOpen || e.button !== 0) return;
+    const ref = this.slotAt(e.target);
+    if (!ref || !ref.inv.slots[ref.i]) return;
+    if (e.shiftKey) {
+      if (this.container) this.sendAcross(ref);
+      else this.inv.quickMove(ref.i);
+      return;
+    }
+    this.dragFrom = ref;
+    this.ghost.style.backgroundImage = `url(${this.icons[ref.inv.slots[ref.i]!.item] ?? ''})`;
+    this.moveGhost(e);
+    this.ghost.classList.add('on');
+    this.nodeOf(ref)?.classList.add('dragging');
+  };
+
+  private onPointerMove = (e: PointerEvent): void => {
+    if (this.dragFrom) this.moveGhost(e);
+  };
+
+  private onPointerUp = (e: PointerEvent): void => {
+    const from = this.dragFrom;
+    if (!from) return;
+    const to = this.slotAt(document.elementFromPoint(e.clientX, e.clientY));
+    this.cancelDrag();
+    if (!to) return;
+    if (to.inv === from.inv) from.inv.move(from.i, to.i);
+    else from.inv.transfer(from.i, to.inv, to.i);
+  };
+
+  private cancelDrag(): void {
+    if (this.dragFrom) this.nodeOf(this.dragFrom)?.classList.remove('dragging');
+    this.dragFrom = null;
+    this.ghost.classList.remove('on');
+  }
+
+  private moveGhost(e: PointerEvent): void {
+    this.ghost.style.transform = `translate(${e.clientX - 32}px, ${e.clientY - 32}px)`;
+  }
+}

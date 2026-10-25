@@ -1,0 +1,14 @@
+{
+  "detector": {
+    "ignoreRules": [],
+    "ignoreFiles": [],
+    "ignoreValues": [
+      {
+        "rule": "bounce-easing",
+        "value": "cubic-bezier(0.2, 1.4, 0.4, 1)",
+        "createdAt": "2026-10-25T03:48:54.499Z",
+        "reason": "agent decision: overshoot slam-in for comic splash alerts and cover screens is core to the user's requested Marvel Rivals-style dynamic comic UI; all other UI motion uses ease-out"
+      }
+    ]
+  }
+}

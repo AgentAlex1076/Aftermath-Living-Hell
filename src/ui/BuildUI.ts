@@ -1,0 +1,132 @@
+import { BUILD_BAR, PIECES, TIERS, nextTier, pieceCost, type PieceDef } from '../data/buildables';
+import type { ItemAmount } from '../data/loot';
+import type { Inventory } from '../gameplay/Inventory';
+import type { Building, Piece, Placement } from '../gameplay/Building';
+import { el, q } from './dom';
+
+type Icons = Record<string, string>;
+
+/** Key under which a build piece's icon is stored. */
+export const pieceIconKey = (id: string) => `build:${id}`;
+
+/** Build mode bar, placement tag at the cursor, and the hammer's piece card. */
+export class BuildUI {
+  private readonly mode: HTMLElement;
+  private readonly bar: HTMLElement;
+  private readonly desc: HTMLElement;
+  private readonly cursorTag: HTMLElement;
+  private readonly card: HTMLElement;
+  private barKey = '';
+  private cursorKey = '';
+  private cardKey = '';
+
+  constructor(
+    parent: HTMLElement,
+    private readonly building: Building,
+    private readonly inv: Inventory,
+    private readonly icons: Icons,
+  ) {
+    this.mode = el('div', 'build-mode');
+    this.mode.innerHTML = `
+      <div class="build-banner">
+        <span class="bm-title">BUILD MODE</span>
+        <span class="bm-hint"><kbd>LMB</kbd> PLACE <kbd>R</kbd> ROTATE <kbd>1–7</kbd> PIECE <kbd>B</kbd> EXIT</span>
+      </div>
+      <div class="bm-desc"></div>
+      <div class="build-bar"></div>
+    `;
+    this.bar = q(this.mode, '.build-bar');
+    this.desc = q(this.mode, '.bm-desc');
+    this.cursorTag = el('div', 'build-cursor');
+    this.card = el('div', 'piece-card');
+    parent.append(this.mode, this.cursorTag, this.card);
+  }
+
+  /** Cost chips (red when you can't afford them), or with `refund` the salvage you'd get back. */
+  private chips(cost: readonly ItemAmount[], kind: 'cost' | 'refund' = 'cost'): string {
+    return cost
+      .map((a) => {
+        const icon = this.icons[a.item] ? `style="background-image:url(${this.icons[a.item]})"` : '';
+        if (kind === 'refund') return `<span class="chip refund"><i ${icon}></i>+${a.qty}</span>`;
+        const ok = this.building.free || this.inv.count(a.item) >= a.qty;
+        return `<span class="chip ${ok ? 'ok' : 'missing'}"><i ${icon}></i>${a.qty}</span>`;
+      })
+      .join('');
+  }
+
+  /** Per frame while playing. `placement` is null outside build mode. */
+  setBuild(active: boolean, selected: number, placement: Placement | null, mouseX: number, mouseY: number): void {
+    this.mode.classList.toggle('on', active);
+    if (!active) {
+      this.cursorTag.classList.remove('on');
+      this.cursorKey = '';
+      return;
+    }
+
+    const counts = BUILD_BAR.flatMap((id) => pieceCost(PIECES[id], 'wood').map((a) => this.inv.count(a.item))).join(',');
+    const key = `${selected}|${counts}|${this.building.free}`;
+    if (key !== this.barKey) {
+      this.barKey = key;
+      this.bar.innerHTML = BUILD_BAR.map((id, i) => {
+        const def: PieceDef = PIECES[id];
+        const icon = this.icons[pieceIconKey(id)];
+        return `
+          <div class="bb-card ${i === selected ? 'selected' : ''}">
+            <span class="bb-key">${i + 1}</span>
+            <span class="bb-icon" ${icon ? `style="background-image:url(${icon})"` : ''}></span>
+            <span class="bb-name">${def.name.toUpperCase()}</span>
+            <span class="bb-cost">${this.chips(pieceCost(def, 'wood'))}</span>
+          </div>`;
+      }).join('');
+      const def: PieceDef = PIECES[BUILD_BAR[selected]];
+      this.desc.textContent = def.description;
+    }
+
+    const tagKey = placement ? `${placement.ok}|${placement.reason}|${placement.def.id}` : '';
+    if (tagKey !== this.cursorKey) {
+      this.cursorKey = tagKey;
+      if (placement) {
+        this.cursorTag.dataset.ok = String(placement.ok);
+        this.cursorTag.innerHTML = placement.ok ? `<b>PLACE</b> ${placement.def.name.toUpperCase()}` : placement.reason;
+      }
+      this.cursorTag.classList.toggle('on', !!placement);
+    }
+    this.cursorTag.style.transform = `translate(${mouseX + 26}px, ${mouseY + 14}px)`;
+  }
+
+  /** The piece the hammer is pointed at, with repair/upgrade/demolish costs. */
+  setPieceCard(piece: Piece | null, demolishProgress: number): void {
+    this.card.classList.toggle('on', !!piece);
+    if (!piece) {
+      this.cardKey = '';
+      return;
+    }
+    const b = this.building;
+    const damaged = piece.hp < piece.maxHp - 0.5;
+    const repair = damaged ? b.repairCost(piece) : [];
+    const upgrade = b.upgradeCost(piece);
+    const refund = b.refund(piece);
+    const counts = [...repair, ...(upgrade ?? [])].map((a) => this.inv.count(a.item)).join(',');
+    const key = `${piece.uid}|${piece.tier}|${Math.round(piece.hp)}|${counts}|${b.free}`;
+    if (key !== this.cardKey) {
+      this.cardKey = key;
+      const tier = TIERS[piece.tier];
+      const tiered = piece.def.kind !== 'deployable';
+      const next = nextTier(piece.tier);
+      const nextName = next ? TIERS[next].name.toUpperCase() : '';
+      this.card.style.setProperty('--tier', tier.color);
+      this.card.innerHTML = `
+        <div class="pc-head">
+          <span class="pc-name">${piece.def.name.toUpperCase()}</span>
+          ${tiered ? `<span class="pc-tier">${tier.name.toUpperCase()}</span>` : ''}
+        </div>
+        <div class="pc-hp"><div class="pc-hp-fill"></div><span>${Math.ceil(piece.hp)} / ${piece.maxHp} HP</span></div>
+        <div class="pc-row"><kbd>LMB</kbd><span>${damaged ? 'REPAIR' : 'NOT DAMAGED'}</span><span class="pc-cost">${damaged ? this.chips(repair) : ''}</span></div>
+        ${tiered ? `<div class="pc-row"><kbd>R</kbd><span>${upgrade ? `UPGRADE → ${nextName}` : 'MAX TIER'}</span><span class="pc-cost">${upgrade ? this.chips(upgrade) : ''}</span></div>` : ''}
+        <div class="pc-row pc-demolish"><kbd>X</kbd><span>HOLD TO DEMOLISH</span><span class="pc-cost">${this.chips(refund, 'refund')}</span><i class="pc-fill"></i></div>
+      `;
+    }
+    q(this.card, '.pc-hp-fill').style.transform = `scaleX(${Math.max(0, piece.hp / piece.maxHp)})`;
+    q(this.card, '.pc-fill').style.transform = `scaleX(${demolishProgress})`;
+  }
+}
