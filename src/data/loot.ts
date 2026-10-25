@@ -36,6 +36,10 @@ export const CONTAINERS = {
       { item: 'charcoal', min: 2, max: 5, weight: 1 },
       { item: 'gunpowder', min: 2, max: 5, weight: 1 },
       { item: 'gasFilter', min: 1, max: 1, weight: 1.2 },
+      { item: 'ammo', min: 4, max: 10, weight: 1.4 },
+      { item: 'rustedBarrel', min: 1, max: 1, weight: 0.7 },
+      { item: 'woodGrip', min: 1, max: 1, weight: 0.5 },
+      { item: 'ironSight', min: 1, max: 1, weight: 0.4 },
     ],
   },
   cabinet: {
@@ -57,6 +61,11 @@ export const CONTAINERS = {
       { item: 'metalPlate', min: 1, max: 3, weight: 1.5 },
       { item: 'rustyPickaxe', min: 1, max: 1, weight: 0.6 },
       { item: 'rustyHatchet', min: 1, max: 1, weight: 0.6 },
+      { item: 'rustedReceiver', min: 1, max: 1, weight: 1.1 },
+      { item: 'rustedTrigger', min: 1, max: 1, weight: 1 },
+      { item: 'stickMag', min: 1, max: 1, weight: 0.9 },
+      { item: 'rustedMuzzle', min: 1, max: 1, weight: 0.7 },
+      { item: 'pipeReceiver', min: 1, max: 1, weight: 0.45 },
     ],
   },
   labLocker: {
@@ -68,6 +77,16 @@ export const CONTAINERS = {
       { item: 'gunpowder', min: 4, max: 10, weight: 2 },
       { item: 'bandage', min: 1, max: 3, weight: 2 },
       { item: 'medkit', min: 1, max: 1, weight: 1 },
+      { item: 'ammo', min: 8, max: 18, weight: 2 },
+      { item: 'militaryReceiver', min: 1, max: 1, weight: 0.7 },
+      { item: 'longBarrel', min: 1, max: 1, weight: 0.8 },
+      { item: 'hairTrigger', min: 1, max: 1, weight: 0.6 },
+      { item: 'reflexSight', min: 1, max: 1, weight: 0.6 },
+      { item: 'drumMag', min: 1, max: 1, weight: 0.45 },
+      { item: 'compensator', min: 1, max: 1, weight: 0.5 },
+      { item: 'protoBarrel', min: 1, max: 1, weight: 0.25 },
+      { item: 'slugConverter', min: 1, max: 1, weight: 0.3 },
+      { item: 'laserModule', min: 1, max: 1, weight: 0.22 },
     ],
   },
 } as const satisfies Record<string, ContainerDef>;
@@ -84,6 +103,12 @@ export const STARTER_SUPPLIES: readonly ItemAmount[] = [
   { item: 'mutantMeat', qty: 2 },
   { item: 'wood', qty: 12 },
   { item: 'cloth', qty: 8 },
+  { item: 'rustedReceiver', qty: 1 },
+  { item: 'rustedBarrel', qty: 1 },
+  { item: 'woodGrip', qty: 1 },
+  { item: 'rustedTrigger', qty: 1 },
+  { item: 'stickMag', qty: 1 },
+  { item: 'ammo', qty: 24 },
 ];
 
 /** Rolls loot; `danger` (0..1) adds extra rolls and bigger stacks deeper in the wasteland. */

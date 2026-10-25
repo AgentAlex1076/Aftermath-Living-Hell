@@ -201,7 +201,7 @@ export class Minimap {
       ctx.strokeRect(c.x - 1.1, c.z - 1.1, 2.2, 2.2);
     }
     for (const e of this.horde.enemies) {
-      if (!e.alive || !near(e.position.x, e.position.z)) continue;
+      if (!e.alive || e.cloaked || !near(e.position.x, e.position.z)) continue;
       ctx.fillStyle = e.def.color;
       ctx.strokeStyle = '#0b0b0d';
       ctx.lineWidth = 0.5;

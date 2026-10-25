@@ -1,7 +1,7 @@
 import { CONFIG } from '../data/config';
 import { events } from '../core/EventBus';
 import { Rng } from '../core/random';
-import type { EnemyId } from '../data/enemies';
+import { bossFor, type EnemyId } from '../data/enemies';
 import type { Horde, SpawnJob } from './Horde';
 
 export type RaidState = 'countdown' | 'raid';
@@ -110,8 +110,10 @@ export class Raid {
 
     const count = 5 + raid * 3 + this.rng.int(0, 2);
     const mix = this.mix(raid);
+    let screamers = 1 + Math.floor(raid / 6);
     for (let n = 0; n < count; n++) {
-      const id = pick(mix, this.rng.next());
+      let id = pick(mix, this.rng.next());
+      if (id === 'screamer' && screamers-- <= 0) id = 'shambler';
       const heading = headings[n % headings.length] + this.rng.range(-0.2, 0.2);
       const r = this.rng.range(CONFIG.raid.spawnMin, CONFIG.raid.spawnMax);
       jobs.push({
@@ -121,10 +123,11 @@ export class Raid {
         delay: 0.4 + Math.floor(n / dirs) * this.rng.range(0.55, 0.9) + this.rng.range(0, 0.3),
       });
     }
-    if (raid % 5 === 0) {
+    const boss = bossFor(raid);
+    if (boss) {
       const h = headings[0];
       const r = (CONFIG.raid.spawnMin + CONFIG.raid.spawnMax) / 2;
-      jobs.push({ id: 'chemist', raid: true, x: Math.sin(h) * r, z: Math.cos(h) * r, delay: 1.2 });
+      jobs.push({ id: boss.id, raid: true, x: Math.sin(h) * r, z: Math.cos(h) * r, delay: 1.2, hpMul: boss.hpMul });
     }
     return jobs;
   }
@@ -134,6 +137,10 @@ export class Raid {
     if (raid >= 2) out.push({ id: 'crawler', w: 2 + raid * 0.4 });
     if (raid >= 2) out.push({ id: 'bloater', w: 1 + raid * 0.25 });
     if (raid >= 3) out.push({ id: 'brute', w: 0.4 + raid * 0.15 });
+    if (raid >= 3) out.push({ id: 'spitter', w: 1 + raid * 0.25 });
+    if (raid >= 4) out.push({ id: 'screamer', w: 0.6 + raid * 0.1 });
+    if (raid >= 4) out.push({ id: 'stalker', w: 0.8 + raid * 0.2 });
+    if (raid >= 5) out.push({ id: 'climber', w: 1 + raid * 0.3 });
     return out;
   }
 }

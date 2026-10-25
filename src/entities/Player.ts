@@ -38,6 +38,12 @@ export class Player {
   infiniteStamina = false;
   godMode = false;
 
+  /** Extra mass from the equipped gun; applied as a move-speed penalty. */
+  load = 0;
+  aiming = false;
+  /** Recoil kick, 0..1, decays each tick. */
+  kick = 0;
+
   swinging = false;
   swingElapsed = 0;
   swingDuration = 0;
@@ -177,9 +183,12 @@ export class Player {
       this.facing = dampAngle(this.facing, Math.atan2(_wish.x, _wish.z), cfg.turnSpeed * 0.6, dt);
     }
 
-    this.sprinting = moving && !this.swinging && input.isDown('sprint') && !this.exhausted && this.stamina > 0;
+    this.kick = Math.max(0, this.kick - dt * 4);
+    this.sprinting = moving && !this.swinging && !this.aiming && input.isDown('sprint') && !this.exhausted && this.stamina > 0;
     let speed = this.sprinting ? cfg.sprintSpeed : cfg.walkSpeed;
     if (this.swinging) speed *= cfg.swingMoveMultiplier;
+    if (this.load > 0) speed *= CONFIG.guns.weightSoft / (CONFIG.guns.weightSoft + this.load);
+    if (this.aiming) speed *= CONFIG.combat.aimMove;
     if (moving) {
       const facingX = Math.sin(this.facing);
       const facingZ = Math.cos(this.facing);

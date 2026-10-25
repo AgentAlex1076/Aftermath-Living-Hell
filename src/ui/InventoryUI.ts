@@ -1,17 +1,20 @@
+import { evaluateBuild } from '../data/guns';
 import { ITEMS, type ItemDef } from '../data/items';
 import type { Inventory, Stack } from '../gameplay/Inventory';
+import { events } from '../core/EventBus';
 import { el, q } from './dom';
+import { stackIcon } from './IconRenderer';
 
 type Icons = Record<string, string>;
 
 function fillSlot(node: HTMLElement, stack: Stack | null, icons: Icons): void {
-  const key = stack ? `${stack.item}:${stack.qty}` : '';
+  const key = stack ? `${stack.item}:${stack.qty}:${stack.gun?.id ?? ''}:${stack.gun?.loaded ?? ''}` : '';
   if (node.dataset.key === key) return;
   node.dataset.key = key;
   node.classList.toggle('empty', !stack);
   const icon = q(node, '.slot-icon');
   const qty = q(node, '.slot-qty');
-  icon.style.backgroundImage = stack && icons[stack.item] ? `url(${icons[stack.item]})` : 'none';
+  icon.style.backgroundImage = stack ? `url(${stackIcon(stack, icons)})` : 'none';
   qty.textContent = stack && stack.qty > 1 ? String(stack.qty) : '';
 }
 
@@ -22,8 +25,13 @@ function slotNode(index: number, label?: string): HTMLElement {
   return node;
 }
 
-function describe(def: ItemDef): string {
+function describe(def: ItemDef, stack?: Stack | null): string {
   const lines: string[] = [];
+  if (stack?.gun) {
+    const s = evaluateBuild(stack.gun.parts).stats;
+    lines.push(`<span class="tt-stat">${s.fireMode.toUpperCase()} · ${Math.round(s.damage)} DMG · ${s.magSize} MAG</span>`);
+    lines.push(`<span class="tt-stat">${stack.gun.loaded}/${s.magSize} LOADED</span>`);
+  }
   if (def.tool?.kind === 'hammer') lines.push('<span class="tt-stat">REPAIR · UPGRADE · DEMOLISH</span>');
   else if (def.tool) lines.push(`<span class="tt-stat">${def.tool.kind.toUpperCase()} · POWER ${def.tool.power} · ${(1 / def.tool.swingTime).toFixed(1)} SWINGS/S</span>`);
   if (def.consumable?.heal) lines.push(`<span class="tt-stat">${def.consumable.heal > 0 ? '+' : ''}${def.consumable.heal} HEALTH</span>`);
@@ -64,7 +72,7 @@ export class HotbarView {
     const key = `${this.inv.selected}:${st?.item ?? ''}`;
     if (key !== this.lastSelected) {
       this.lastSelected = key;
-      this.nameTag.textContent = st ? (ITEMS[st.item] as ItemDef).name.toUpperCase() : 'BARE HANDS';
+      this.nameTag.textContent = st?.gun ? st.gun.name.toUpperCase() : st ? (ITEMS[st.item] as ItemDef).name.toUpperCase() : 'BARE HANDS';
       this.nameTag.classList.remove('show');
       void this.nameTag.offsetWidth;
       this.nameTag.classList.add('show');
@@ -97,6 +105,7 @@ export class InventoryView {
   private readonly hint: HTMLElement;
   private dragFrom: SlotRef | null = null;
   private container: OpenContainer | null = null;
+  private acceptInto: ((stack: Stack) => boolean) | null = null;
   private isOpen = false;
 
   constructor(
@@ -172,8 +181,9 @@ export class InventoryView {
   }
 
   /** Shows a storage container's slots inside `grid` (or removes them with null). */
-  setContainer(inv: Inventory | null, grid?: HTMLElement): void {
+  setContainer(inv: Inventory | null, grid?: HTMLElement, accept?: (stack: Stack) => boolean): void {
     this.cancelDrag();
+    this.acceptInto = accept ?? null;
     if (this.container) {
       this.container.off();
       for (const s of this.container.slots) s.remove();
@@ -223,11 +233,22 @@ export class InventoryView {
     return ref.inv === this.inv ? this.slots[ref.i] : this.container?.slots[ref.i];
   }
 
+  private allowedInto(to: Inventory, stack: Stack | null): boolean {
+    if (!stack) return false;
+    if (to === this.inv || !this.acceptInto) return true;
+    return this.acceptInto(stack);
+  }
+
   /** Shift/right-click with a box open: moves the stack to the other side. */
   private sendAcross(ref: SlotRef): void {
     const c = this.container;
     if (!c) return;
     const to = ref.inv === this.inv ? c.inv : this.inv;
+    const stack = ref.inv.slots[ref.i];
+    if (!this.allowedInto(to, stack)) {
+      events.emit('toast', { text: 'That does not go in here.', tone: 'warn' });
+      return;
+    }
     if (!ref.inv.transfer(ref.i, to)) this.flashFull(to);
   }
 
@@ -248,7 +269,8 @@ export class InventoryView {
       return;
     }
     const def: ItemDef = ITEMS[st.item];
-    this.tooltip.innerHTML = `<div class="tt-name" style="--c:${def.color}">${def.name.toUpperCase()}</div><div class="tt-kind">${def.kind}</div>${describe(def)}<p>${def.description}</p>`;
+    const title = st.gun ? st.gun.name.toUpperCase() : def.name.toUpperCase();
+    this.tooltip.innerHTML = `<div class="tt-name" style="--c:${def.color}">${title}</div><div class="tt-kind">${st.gun ? 'assembled gun' : def.kind}</div>${describe(def, st)}<p>${def.description}</p>`;
     const r = node.getBoundingClientRect();
     const right = r.right + 12 + 270 < window.innerWidth;
     this.tooltip.style.left = right ? `${r.right + 12}px` : `${r.left - 12 - 270}px`;
@@ -266,7 +288,7 @@ export class InventoryView {
       return;
     }
     this.dragFrom = ref;
-    this.ghost.style.backgroundImage = `url(${this.icons[ref.inv.slots[ref.i]!.item] ?? ''})`;
+    this.ghost.style.backgroundImage = `url(${stackIcon(ref.inv.slots[ref.i]!, this.icons)})`;
     this.moveGhost(e);
     this.ghost.classList.add('on');
     this.nodeOf(ref)?.classList.add('dragging');
@@ -283,7 +305,9 @@ export class InventoryView {
     this.cancelDrag();
     if (!to) return;
     if (to.inv === from.inv) from.inv.move(from.i, to.i);
-    else from.inv.transfer(from.i, to.inv, to.i);
+    else if (!this.allowedInto(to.inv, from.inv.slots[from.i])) {
+      events.emit('toast', { text: 'That does not go in here.', tone: 'warn' });
+    } else from.inv.transfer(from.i, to.inv, to.i);
   };
 
   private cancelDrag(): void {

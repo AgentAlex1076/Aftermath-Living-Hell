@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { CONFIG } from '../data/config';
-import { BUILD_BAR, PIECES, pieceModel, type PieceDef } from '../data/buildables';
+import { BUILD_TABS, PIECES, pieceModel, type PieceDef, type PieceId } from '../data/buildables';
 import { models } from '../models/ModelRegistry';
 import { mergeColored } from '../models/merge';
 import type { Building, Piece, Placement } from './Building';
@@ -17,6 +17,7 @@ const BAD_COLOR = new THREE.Color('#ff3b30');
  */
 export class BuildMode {
   active = false;
+  tab = 0;
   selected = 0;
   rotSteps = 0;
   placement: Placement | null = null;
@@ -42,8 +43,22 @@ export class BuildMode {
     scene.add(this.highlight);
   }
 
+  get pieces(): readonly PieceId[] {
+    return BUILD_TABS[this.tab].pieces;
+  }
+
   get def(): PieceDef {
-    return PIECES[BUILD_BAR[this.selected]];
+    return PIECES[this.pieces[Math.min(this.selected, this.pieces.length - 1)]];
+  }
+
+  setTab(i: number): void {
+    if (i < 0 || i >= BUILD_TABS.length) return;
+    this.tab = i;
+    this.selected = Math.min(this.selected, this.pieces.length - 1);
+  }
+
+  nextTab(): void {
+    this.setTab((this.tab + 1) % BUILD_TABS.length);
   }
 
   setActive(on: boolean): void {
@@ -56,7 +71,7 @@ export class BuildMode {
   }
 
   select(i: number): void {
-    if (i < 0 || i >= BUILD_BAR.length) return;
+    if (i < 0 || i >= this.pieces.length) return;
     this.selected = i;
   }
 

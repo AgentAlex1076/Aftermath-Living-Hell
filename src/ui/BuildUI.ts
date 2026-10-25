@@ -1,4 +1,4 @@
-import { BUILD_BAR, PIECES, TIERS, nextTier, pieceCost, type PieceDef } from '../data/buildables';
+import { BUILD_TABS, PIECES, TIERS, nextTier, pieceCost, type PieceDef, type PieceId } from '../data/buildables';
 import type { ItemAmount } from '../data/loot';
 import type { Inventory } from '../gameplay/Inventory';
 import type { Building, Piece, Placement } from '../gameplay/Building';
@@ -14,6 +14,7 @@ export class BuildUI {
   private readonly mode: HTMLElement;
   private readonly bar: HTMLElement;
   private readonly desc: HTMLElement;
+  private readonly tabs: HTMLElement;
   private readonly cursorTag: HTMLElement;
   private readonly card: HTMLElement;
   private barKey = '';
@@ -25,21 +26,28 @@ export class BuildUI {
     private readonly building: Building,
     private readonly inv: Inventory,
     private readonly icons: Icons,
+    onTab: (i: number) => void,
   ) {
     this.mode = el('div', 'build-mode');
     this.mode.innerHTML = `
       <div class="build-banner">
         <span class="bm-title">BUILD MODE</span>
-        <span class="bm-hint"><kbd>LMB</kbd> PLACE <kbd>R</kbd> ROTATE <kbd>1–7</kbd> PIECE <kbd>B</kbd> EXIT</span>
+        <span class="bm-hint"><kbd>LMB</kbd> PLACE <kbd>R</kbd> ROTATE <kbd>Q</kbd> TAB <kbd>1–7</kbd> PIECE <kbd>B</kbd> EXIT</span>
       </div>
+      <div class="bm-tabs">${BUILD_TABS.map((t, i) => `<button type="button" data-tab="${i}">${t.name.toUpperCase()}</button>`).join('')}</div>
       <div class="bm-desc"></div>
       <div class="build-bar"></div>
     `;
     this.bar = q(this.mode, '.build-bar');
     this.desc = q(this.mode, '.bm-desc');
+    this.tabs = q(this.mode, '.bm-tabs');
     this.cursorTag = el('div', 'build-cursor');
     this.card = el('div', 'piece-card');
     parent.append(this.mode, this.cursorTag, this.card);
+    this.tabs.addEventListener('click', (e) => {
+      const btn = (e.target as Element).closest<HTMLButtonElement>('button[data-tab]');
+      if (btn) onTab(Number(btn.dataset.tab));
+    });
   }
 
   /** Cost chips (red when you can't afford them), or with `refund` the salvage you'd get back. */
@@ -55,7 +63,7 @@ export class BuildUI {
   }
 
   /** Per frame while playing. `placement` is null outside build mode. */
-  setBuild(active: boolean, selected: number, placement: Placement | null, mouseX: number, mouseY: number): void {
+  setBuild(active: boolean, tab: number, selected: number, placement: Placement | null, mouseX: number, mouseY: number): void {
     this.mode.classList.toggle('on', active);
     if (!active) {
       this.cursorTag.classList.remove('on');
@@ -63,11 +71,13 @@ export class BuildUI {
       return;
     }
 
-    const counts = BUILD_BAR.flatMap((id) => pieceCost(PIECES[id], 'wood').map((a) => this.inv.count(a.item))).join(',');
-    const key = `${selected}|${counts}|${this.building.free}`;
+    const ids = BUILD_TABS[tab].pieces;
+    const counts = ids.flatMap((id) => pieceCost(PIECES[id], 'wood').map((a) => this.inv.count(a.item))).join(',');
+    const key = `${tab}|${selected}|${counts}|${this.building.free}`;
     if (key !== this.barKey) {
       this.barKey = key;
-      this.bar.innerHTML = BUILD_BAR.map((id, i) => {
+      this.tabs.querySelectorAll<HTMLButtonElement>('button').forEach((b, i) => b.classList.toggle('on', i === tab));
+      this.bar.innerHTML = ids.map((id: PieceId, i) => {
         const def: PieceDef = PIECES[id];
         const icon = this.icons[pieceIconKey(id)];
         return `
@@ -78,7 +88,7 @@ export class BuildUI {
             <span class="bb-cost">${this.chips(pieceCost(def, 'wood'))}</span>
           </div>`;
       }).join('');
-      const def: PieceDef = PIECES[BUILD_BAR[selected]];
+      const def: PieceDef = PIECES[ids[Math.min(selected, ids.length - 1)]];
       this.desc.textContent = def.description;
     }
 

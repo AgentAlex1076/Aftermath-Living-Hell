@@ -128,6 +128,7 @@ export class Oven {
     if (job.elapsed >= job.recipe.time) {
       this.jobs.shift();
       this.stash(job.recipe.output.item, job.recipe.output.qty);
+      events.emit('recipe:made', { id: job.recipe.id });
       if (this.jobs.length === 0) {
         const def: ItemDef = ITEMS[job.recipe.output.item];
         events.emit('toast', { text: `Oven's done. ${def.name} is waiting in the tray.`, tone: 'info' });

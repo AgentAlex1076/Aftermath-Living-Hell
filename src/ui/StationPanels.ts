@@ -161,12 +161,14 @@ export class StoragePanel {
   }
 
   /** Shows `inv` (or hides the panel with null); `into` is where TAKE ALL sends things. */
-  show(inv: Inventory | null, into: Inventory | null = null): void {
+  show(inv: Inventory | null, into: Inventory | null = null, meta?: { title: string; hint: string }): void {
     this.off?.();
     this.off = null;
     this.inv = inv;
     this.into = into;
     this.root.hidden = !inv;
+    q(this.root, '.side-title').textContent = meta?.title ?? 'STORAGE BOX';
+    q(this.root, '.section-hint').textContent = meta?.hint ?? 'STASHED LOOT SURVIVES A RAID PENALTY. YOUR BACKPACK DOES NOT.';
     if (inv) {
       this.off = inv.onChange(() => this.refresh());
       this.refresh();

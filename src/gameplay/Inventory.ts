@@ -1,9 +1,12 @@
 import { CONFIG } from '../data/config';
+import type { GunInstance } from '../data/guns';
 import { ITEMS, type ItemDef, type ItemId, type ToolKind, type ToolStats } from '../data/items';
 
 export interface Stack {
   item: ItemId;
   qty: number;
+  /** Unique payload for an assembled gun (never stacked). */
+  gun?: GunInstance;
 }
 
 /**
@@ -35,6 +38,11 @@ export class Inventory {
     for (const fn of this.listeners) fn();
   }
 
+  /** Used when a unique stack's payload changes (loaded ammo) without moving slots. */
+  notify(): void {
+    this.changed();
+  }
+
   get selectedStack(): Stack | null {
     return this.slots[this.selected];
   }
@@ -43,6 +51,11 @@ export class Inventory {
   get equippedTool(): ToolStats | null {
     const s = this.selectedStack;
     return s ? ((ITEMS[s.item] as ItemDef).tool ?? null) : null;
+  }
+
+  /** The assembled gun in the selected hotbar slot, if any. */
+  get equippedGun(): GunInstance | null {
+    return this.selectedStack?.gun ?? null;
   }
 
   select(i: number): void {
@@ -73,9 +86,19 @@ export class Inventory {
     return this.slots.some((s) => s && (ITEMS[s.item] as ItemDef).tool?.kind === kind);
   }
 
-  /** Adds items, stacking first. Returns how many didn't fit. */
-  add(item: ItemId, qty: number): number {
+  /** Adds items, stacking first. Returns how many didn't fit. Guns never stack. */
+  add(item: ItemId, qty: number, gun?: GunInstance): number {
     const def: ItemDef = ITEMS[item];
+    if (def.kind === 'gun' || gun) {
+      if (!gun) return qty;
+      for (let i = 0; i < this.size; i++) {
+        if (this.slots[i]) continue;
+        this.slots[i] = { item, qty: 1, gun };
+        this.changed();
+        return qty - 1;
+      }
+      return qty;
+    }
     let left = qty;
     for (const s of this.slots) {
       if (left <= 0) break;
@@ -129,7 +152,7 @@ export class Inventory {
     const a = this.slots[from];
     const b = this.slots[to];
     if (!a) return;
-    if (b && b.item === a.item) {
+    if (b && b.item === a.item && !a.gun && !b.gun) {
       const max = (ITEMS[a.item] as ItemDef).stack;
       const take = Math.min(max - b.qty, a.qty);
       b.qty += take;
@@ -150,7 +173,7 @@ export class Inventory {
     const s = this.slots[i];
     if (!s) return false;
     if (j === undefined) {
-      const left = to.add(s.item, s.qty);
+      const left = to.add(s.item, s.qty, s.gun);
       if (left === s.qty) return false;
       s.qty = left;
       if (left <= 0) this.slots[i] = null;
@@ -158,7 +181,7 @@ export class Inventory {
       return true;
     }
     const t = to.slots[j];
-    if (t && t.item === s.item) {
+    if (t && t.item === s.item && !s.gun && !t.gun) {
       const take = Math.min((ITEMS[s.item] as ItemDef).stack - t.qty, s.qty);
       if (take <= 0) return false;
       t.qty += take;
@@ -191,7 +214,7 @@ export class Inventory {
     }
     for (let j = start; j < end && s.qty > 0; j++) {
       if (!this.slots[j]) {
-        this.slots[j] = { item: s.item, qty: s.qty };
+        this.slots[j] = { item: s.item, qty: s.qty, gun: s.gun };
         s.qty = 0;
       }
     }

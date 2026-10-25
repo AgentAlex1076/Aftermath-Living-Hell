@@ -5,24 +5,33 @@ import { GameLoop } from '../core/GameLoop';
 import { Input, type Action } from '../core/Input';
 import { clamp, damp, lerp, smoothstep, wrapAngle } from '../core/math';
 import { Rng } from '../core/random';
-import { ALL_ITEM_IDS, ITEMS, type ItemDef } from '../data/items';
-import type { EnemyId } from '../data/enemies';
+import { evaluateBuild, makePipePistol } from '../data/guns';
+import { ALL_ITEM_IDS, ITEMS, type ItemDef, type ItemId } from '../data/items';
+import { ALL_ENEMY_IDS, BOSS_IDS, ENEMIES, type EnemyId } from '../data/enemies';
+import { audio, sfx } from '../audio/AudioEngine';
+import { Soundscape } from '../audio/Soundscape';
+import { formatClock } from '../data/score';
+import { OVEN_RECIPES, RECIPES, type Recipe } from '../data/recipes';
 import { Player } from '../entities/Player';
 import { PlayerAnimator } from '../entities/PlayerAnimator';
-import { BUILD_BAR, PIECES, pieceModel } from '../data/buildables';
+import { allPieceIds, hopperAccepts, hopperHint, PIECES, pieceModel } from '../data/buildables';
 import { Building, type Piece } from '../gameplay/Building';
 import { BuildMode } from '../gameplay/BuildMode';
+import { Defenses } from '../gameplay/Defenses';
 import { Crafting } from '../gameplay/Crafting';
 import { FlowField } from '../gameplay/FlowField';
 import { Gathering } from '../gameplay/Gathering';
 import { Horde, meleePower } from '../gameplay/Horde';
 import { Inventory } from '../gameplay/Inventory';
+import { Meta } from '../gameplay/Meta';
 import { Oven } from '../gameplay/Oven';
 import { Raid, type PenaltyReason } from '../gameplay/Raid';
+import { Shooting } from '../gameplay/Shooting';
 import { Survival } from '../gameplay/Survival';
-import type { Recipe } from '../data/recipes';
 import { BuildUI, pieceIconKey } from '../ui/BuildUI';
+import { GunBench } from '../ui/GunBench';
 import { CraftingPanel, OvenPanel, StoragePanel } from '../ui/StationPanels';
+import { assembleGunHeld } from '../models/guns';
 import { models, registerModels } from '../models';
 import { CollisionWorld } from '../physics/Collision';
 import { CameraRig, type PerspectiveMode } from '../render/CameraRig';
@@ -30,14 +39,18 @@ import { FirstPersonViewModel } from '../render/FirstPersonViewModel';
 import { createRenderer } from '../render/createRenderer';
 import { Debris } from '../render/Debris';
 import { Environment } from '../render/Environment';
+import { GasFx } from '../render/GasFx';
 import { LightPool } from '../render/LightPool';
 import { OcclusionFader } from '../render/Occlusion';
+import { PostFX } from '../render/PostFX';
+import { Weather } from '../render/Weather';
 import { DebugPanel } from '../ui/DebugPanel';
 import { FloatingText } from '../ui/FloatingText';
 import { Hud } from '../ui/Hud';
 import { renderIcons, renderItemIcons } from '../ui/IconRenderer';
 import { HotbarView, InventoryView } from '../ui/InventoryUI';
 import { Minimap } from '../ui/Minimap';
+import { MetaOverlay } from '../ui/MetaScreens';
 import { DeathScreen, PauseScreen, StartScreen } from '../ui/Screens';
 import { sound } from '../core/Sound';
 import { InteractionSystem, type Interactable } from '../world/Interactables';
@@ -62,6 +75,11 @@ export class Game {
   private readonly scene = new THREE.Scene();
   private readonly rig: CameraRig;
   private readonly env: Environment;
+  private readonly post: PostFX;
+  private readonly weather: Weather;
+  private readonly gasFx: GasFx;
+  private readonly sound = new Soundscape();
+  private lastHealth: number = CONFIG.player.maxHealth;
   private readonly input: Input;
   private readonly loop: GameLoop;
   private readonly collision = new CollisionWorld();
@@ -81,6 +99,9 @@ export class Game {
   private readonly craftingPanel: CraftingPanel;
   private readonly ovenPanel: OvenPanel;
   private readonly storagePanel: StoragePanel;
+  private readonly gunBench: GunBench;
+  private readonly shooting: Shooting;
+  private readonly defenses: Defenses;
   private readonly building: Building;
   private readonly buildMode: BuildMode;
   private readonly buildUI: BuildUI;
@@ -94,6 +115,7 @@ export class Game {
   private demolishTime = 0;
   private demolishArmed = true;
   private shownBuildHint = false;
+  private shownGunHint = false;
   private ovenGlow = 0;
   private readonly debris: Debris;
   private readonly floaters: FloatingText;
@@ -102,6 +124,9 @@ export class Game {
   private readonly minimap: Minimap;
   private readonly pauseScreen: PauseScreen;
   private readonly deathScreen: DeathScreen;
+  private readonly meta: Meta;
+  private readonly metaOverlay: MetaOverlay;
+  private recorded = false;
   private readonly debug: DebugPanel;
 
   private perspective: PerspectiveMode = 'first-person';
@@ -130,6 +155,7 @@ export class Game {
   private readonly renderPos = new THREE.Vector3();
   private readonly focusTarget = new THREE.Vector3();
   private readonly camForward = new THREE.Vector3();
+  private readonly camRight = new THREE.Vector3();
   private readonly occlusionTargets = [new THREE.Vector3(), new THREE.Vector3()];
 
   constructor(appRoot: HTMLElement, uiRoot: HTMLElement) {
@@ -161,8 +187,13 @@ export class Game {
       seed: this.seed,
       onUseWorkbench: () => this.setInventoryOpen(true, 'craft'),
       onUseOven: () => this.setInventoryOpen(true, 'oven'),
+      onUseGunBench: () => this.setGunBenchOpen(true),
     });
     this.world.update(0, this.area.spawn, true);
+    this.weather = new Weather(this.scene, this.seed);
+    this.gasFx = new GasFx(this.scene, this.world);
+    this.post = new PostFX(this.renderer, this.scene, this.rig.camera);
+    this.weather.setPixelScale(window.innerHeight * this.renderer.getPixelRatio(), CONFIG.camera.fov);
 
     const model = models.create('player.hazmat');
     this.scene.add(model);
@@ -209,37 +240,78 @@ export class Game {
       this.scene, this.collision, this.flow, this.building, this.world,
       this.player, this.inventory, this.debris, this.floaters,
       () => this.survival.noteCause('maul'),
+      () => this.survival.noteCause('acid'),
     );
     this.raid = new Raid(this.seed, this.horde, {
       insideZone: () => this.area.homeZone.contains(this.player.position),
       applyPenalty: (reason) => this.applyPenalty(reason),
     });
+    this.shooting = new Shooting(
+      this.scene, this.player, this.inventory, this.horde, this.building, this.debris, this.floaters,
+    );
+    this.defenses = new Defenses(
+      this.scene, this.building, this.horde, this.shooting, this.player, this.world,
+      this.lights, this.debris, this.floaters,
+    );
     this.roamRng = new Rng(this.seed ^ 0x524f41);
     this.seedRoamers();
 
     this.icons = {
       ...renderItemIcons(ALL_ITEM_IDS),
-      ...renderIcons(BUILD_BAR.map((id) => ({ key: pieceIconKey(id), model: pieceModel(PIECES[id], 'wood') }))),
+      ...renderIcons(allPieceIds().map((id) => ({ key: pieceIconKey(id), model: pieceModel(PIECES[id], 'wood') }))),
+      ...renderIcons(ALL_ENEMY_IDS.map((id) => ({ key: `enemy:${id}`, model: ENEMIES[id].model }))),
     };
     this.minimap = new Minimap(this.hud.root, this.world, this.building, this.horde);
     new HotbarView(this.hud.root, this.inventory, this.icons);
-    this.buildUI = new BuildUI(this.hud.root, this.building, this.inventory, this.icons);
+    this.buildUI = new BuildUI(this.hud.root, this.building, this.inventory, this.icons, (i) => this.buildMode.setTab(i));
     this.inventoryView = new InventoryView(uiRoot, this.inventory, this.icons, (i) => this.gathering.use(i));
     this.craftingPanel = new CraftingPanel(this.inventoryView.side, this.crafting, this.inventory, this.icons, () => this.nearWorkbench());
     this.ovenPanel = new OvenPanel(this.inventoryView.side, this.oven, this.inventory, this.icons);
     this.storagePanel = new StoragePanel(this.inventoryView.side);
-    this.inventory.onChange(() => this.syncHeldItem());
+    this.gunBench = new GunBench(uiRoot, this.inventory, this.icons);
+    this.inventory.onChange(() => {
+      this.syncHeldItem();
+      this.scanParts();
+    });
 
-    this.pauseScreen = new PauseScreen(uiRoot, this.seed, () => this.setPaused(false), () => this.newRun());
-    this.deathScreen = new DeathScreen(uiRoot, () => this.newRun());
+    this.meta = Meta.load();
+    this.pauseScreen = new PauseScreen(uiRoot, this.seed, {
+      onResume: () => this.setPaused(false),
+      onAbandon: () => this.abandon(),
+      onCodex: () => this.metaOverlay.showCodex(),
+      onLedger: () => this.metaOverlay.showLedger(),
+    });
+    this.deathScreen = new DeathScreen(uiRoot, {
+      onNewRun: () => this.newRun(),
+      onCodex: () => this.metaOverlay.showCodex(),
+      onLedger: () => this.metaOverlay.showLedger(),
+    });
+    this.metaOverlay = new MetaOverlay(uiRoot, this.meta, this.icons, (seed) => this.replay(seed));
+    new StartScreen(uiRoot, this.meta, {
+      onStart: (perspective) => this.beginPlay(perspective),
+      onCodex: () => this.metaOverlay.showCodex(),
+      onLedger: () => this.metaOverlay.showLedger(),
+    });
     this.debug = new DebugPanel(uiRoot, {
       toggleColliders: (on) => this.toggleColliderDebug(on),
       toggleInfiniteStamina: (on) => (this.player.infiniteStamina = on),
       toggleGodMode: (on) => (this.player.godMode = on),
       setTimeScale: (s) => (this.loop.timeScale = s),
       teleportHome: () => this.player.teleport(this.area.spawn.x, this.area.spawn.z),
+      openGunBench: () => this.setGunBenchOpen(true),
+      giveGun: () => {
+        this.inventory.add('craftedGun', 1, makePipePistol());
+      },
       giveKit: () => {
-        for (const [item, qty] of [['hammer', 1], ['crowbar', 1], ['gasFilter', 5], ['bandage', 5], ['wood', 400], ['scrap', 300], ['cloth', 40], ['charcoal', 12], ['metalPlate', 40], ['mutantMeat', 5]] as const) this.inventory.add(item, qty);
+        const kit: [ItemId, number][] = [
+          ['hammer', 1], ['crowbar', 1], ['gasFilter', 5], ['bandage', 5],
+          ['wood', 240], ['scrap', 200], ['cloth', 60], ['stone', 40], ['charcoal', 12], ['metalPlate', 24],
+          ['mutantMeat', 5], ['gunpowder', 36], ['electronics', 24], ['chemicals', 24], ['ammo', 80],
+          ['rustedReceiver', 2], ['rustedBarrel', 2], ['woodGrip', 2], ['woodHandle', 1],
+          ['woodStock', 1], ['rustedTrigger', 2], ['stickMag', 2], ['ironSight', 1],
+          ['rustedMuzzle', 1], ['rustedRail', 1], ['pipeReceiver', 1], ['longBarrel', 1],
+        ];
+        for (const [item, qty] of kit) this.inventory.add(item, qty);
       },
       shake: () => events.emit('camera:shake', { amount: 0.7 }),
       toggleFreeBuild: (on) => (this.building.free = on),
@@ -252,11 +324,22 @@ export class Game {
       startRaid: () => this.raid.startNow(),
       spawnEnemy: (id) => this.debugSpawn(id),
       toggleFlow: (on) => this.flow.setDebug(this.scene, on),
+      togglePost: (on) => (this.post.enabled = on),
+      setWeather: (kind) => this.weather.force(kind),
+      lightning: () => this.weather.strike(),
+      killSelf: () => this.die('You flipped the debug switch. The wasteland does not care.'),
+      unlockCodex: () => {
+        this.meta.unlockAll();
+        events.emit('toast', { text: 'CODEX — every page filled.', tone: 'info' });
+      },
     });
-    new StartScreen(uiRoot, (perspective) => this.beginPlay(perspective));
 
     events.on('camera:shake', ({ amount }) => this.rig.addTrauma(amount));
     events.on('player:dodge', () => this.rig.addTrauma(0.12));
+    events.on('enemy:killed', ({ id }) => this.unlock('enemy', id, ENEMIES[id].name));
+    events.on('build:placed', ({ id }) => this.unlock('buildable', id, PIECES[id as keyof typeof PIECES].name));
+    events.on('recipe:made', ({ id }) => this.unlock('recipe', id, recipeLabel(id)));
+    events.on('gun:assembled', (gun) => this.meta.noteGun(gun));
     window.addEventListener('resize', this.onResize);
 
     this.loop = new GameLoop(
@@ -319,14 +402,17 @@ export class Game {
     }
 
     window.setTimeout(() => events.emit('toast', { text: 'Your gear is in the crate by the door. Grab it.', tone: 'info' }), 700);
-    window.setTimeout(() => events.emit('toast', { text: 'Stay close to the hut. Something is moving in the fog.', tone: 'warn' }), 4200);
+    window.setTimeout(() => events.emit('toast', { text: 'The Gun Bench is between the table and the oven. A receiver is the core.', tone: 'info' }), 2800);
+    window.setTimeout(() => events.emit('toast', { text: 'Stay close to the hut. Something is moving in the fog.', tone: 'warn' }), 5200);
   }
 
   private setPaused(paused: boolean): void {
     if (this.state !== 'playing' && this.state !== 'paused') return;
     if (paused && this.inventoryView.open) this.setInventoryOpen(false);
+    if (paused && this.gunBench.isOpen) this.setGunBenchOpen(false);
     this.state = paused ? 'paused' : 'playing';
     this.input.enabled = !paused;
+    if (paused) this.pauseScreen.setRun(this.liveScore(), this.meta.lifetime.bestScore, this.raid.raidsSurvived, this.runTime);
     this.pauseScreen.setVisible(paused);
     document.body.classList.toggle('playing', !paused);
 
@@ -345,6 +431,7 @@ export class Game {
   private setInventoryOpen(open: boolean, side: 'craft' | 'oven' | 'storage' = 'craft', storage: Piece | null = null): void {
     if (this.state !== 'playing') return;
     if (open) {
+      this.setGunBenchOpen(false);
       this.setBuildMode(false);
       this.craftingPanel.setVisible(side === 'craft');
       this.ovenPanel.setVisible(side === 'oven');
@@ -353,8 +440,13 @@ export class Game {
       this.openStorage = null;
     }
     const box = this.openStorage?.storage ?? null;
-    this.storagePanel.show(box, this.inventory);
-    this.inventoryView.setContainer(box, this.storagePanel.grid);
+    const hop = this.openStorage ? hopperHint(this.openStorage.def.hopper) : undefined;
+    const accept = this.openStorage
+      ? (st: { item: ItemId; gun?: unknown }) => hopperAccepts(this.openStorage!.def.hopper, st.item, !!st.gun)
+      : undefined;
+    this.storagePanel.show(box, this.inventory, hop);
+    this.inventoryView.setContainer(box, this.storagePanel.grid, accept);
+    if (open !== this.inventoryView.open) sfx(open ? 'ui.open' : 'ui.close');
     this.inventoryView.setOpen(open);
     this.input.enabled = !open;
     document.body.classList.toggle('playing', !open);
@@ -370,15 +462,32 @@ export class Game {
     }
   }
 
+  private setGunBenchOpen(open: boolean): void {
+    if (this.state !== 'playing') return;
+    if (open) {
+      this.setBuildMode(false);
+      if (this.inventoryView.open) this.setInventoryOpen(false);
+    }
+    if (open !== this.gunBench.isOpen) sfx(open ? 'ui.open' : 'ui.close');
+    this.gunBench.setOpen(open);
+    this.input.enabled = !open;
+    document.body.classList.toggle('playing', !open);
+    if (open && !this.shownGunHint) {
+      this.shownGunHint = true;
+      events.emit('toast', { text: 'Receiver first. Every part has to connect. Where you put it changes how it shoots.', tone: 'info' });
+    }
+  }
+
   private setBuildMode(on: boolean): void {
     if (on && this.state !== 'playing') return;
     if (on === this.buildMode.active) return;
+    if (on) this.setGunBenchOpen(false);
     this.buildMode.setActive(on);
     document.body.classList.toggle('building', on);
     this.hammerTarget = null;
     if (on && !this.shownBuildHint) {
       this.shownBuildHint = true;
-      events.emit('toast', { text: 'Foundations go down first. Walls snap to their edges.', tone: 'info' });
+      events.emit('toast', { text: 'Foundations first. Q flips to traps and power.', tone: 'info' });
     }
 
     if (this.perspective === 'first-person') {
@@ -431,6 +540,7 @@ export class Game {
 
   private updateBuildMode(): void {
     const bm = this.buildMode;
+    if (this.input.wasPressed('buildTab')) bm.nextTab();
     if (this.input.wasPressed('reload')) bm.rotate();
     bm.update(this.hasGroundHit ? this.groundHit : null);
     const pl = bm.placement;
@@ -445,6 +555,7 @@ export class Game {
   }
 
   private onCrafted(recipe: Recipe): void {
+    this.unlock('recipe', recipe.id, ITEMS[recipe.output].name);
     const def: ItemDef = ITEMS[recipe.output];
     const at = this.player.position.clone().setY(2);
     this.floaters.spawn(at, `+${recipe.qty} ${def.name.toUpperCase()}`, 'gain', def.color);
@@ -457,9 +568,22 @@ export class Game {
     window.location.href = url.toString();
   }
 
+  private replay(seed: number): void {
+    const url = new URL(window.location.href);
+    url.searchParams.set('seed', String(seed));
+    window.location.href = url.toString();
+  }
+
+  private abandon(): void {
+    this.fileRun('You walked away from the wasteland.', true);
+    this.newRun();
+  }
+
   private die(cause: string): void {
-    if (this.state === 'dead') return;
+    if (this.state === 'dead' || this.state === 'title') return;
     this.setBuildMode(false);
+    this.setGunBenchOpen(false);
+    this.pauseScreen.setVisible(false);
     this.state = 'dead';
     this.inventoryView.setOpen(false);
     this.input.enabled = false;
@@ -467,27 +591,78 @@ export class Game {
     this.hud.setCrosshair(0, 0, false);
     this.animator.setHeadVisible(true);
     this.viewModel.setVisible(false);
+    this.hud.setVisible(false);
     document.body.classList.remove('playing');
     events.emit('camera:shake', { amount: 0.8 });
+    sfx('player.hurt', { pitch: 0.8 });
+    sfx('death.sting', { delay: 0.4 });
+    const rec = this.fileRun(cause, false);
     window.setTimeout(() => {
-      this.deathScreen.show({
-        cause,
-        seconds: this.runTime,
-        gathered: this.gathering.gathered,
-        crafted: this.crafting.crafted,
-        searched: this.gathering.searched,
-        built: this.building.built,
-        raids: this.raid.raidsSurvived,
-        kills: this.horde.kills,
-        seed: this.seed,
-      });
+      if (rec) this.deathScreen.show(rec);
     }, 900);
+  }
+
+  private fileRun(cause: string, abandoned: boolean) {
+    if (this.recorded) return null;
+    this.recorded = true;
+    return this.meta.record({
+      ...this.runDraft(),
+      cause,
+      abandoned,
+    });
+  }
+
+  private runDraft() {
+    return {
+      seed: this.seed,
+      seconds: this.runTime,
+      raids: this.raid.raidsSurvived,
+      kills: this.horde.kills,
+      killsByType: this.horde.killsByType,
+      bosses: BOSS_IDS.reduce((n, id) => n + (this.horde.killsByType[id] ?? 0), 0),
+      built: this.building.built,
+      guns: this.meta.gunsCrafted,
+      gathered: this.gathering.gathered,
+      crafted: this.crafting.crafted,
+      searched: this.gathering.searched,
+      bestGun: this.meta.bestGun,
+    };
+  }
+
+  private liveScore(): number {
+    return this.meta.scoreNow(this.runDraft()).total;
+  }
+
+  private unlock(kind: 'enemy' | 'part' | 'buildable' | 'recipe', id: string, name: string): void {
+    if (!this.meta.note(kind, id)) return;
+    events.emit('toast', { text: `CODEX — ${name.toUpperCase()} logged.`, tone: 'info' });
+  }
+
+  private scanParts(): void {
+    const ids: string[] = [];
+    for (const s of this.inventory.slots) {
+      if (s && ITEMS[s.item].kind === 'gunPart') ids.push(s.item);
+    }
+    const fresh = this.meta.noteMany('part', ids);
+    if (fresh.length === 1) {
+      events.emit('toast', { text: `CODEX — ${ITEMS[fresh[0] as ItemId].name.toUpperCase()} logged.`, tone: 'info' });
+    } else if (fresh.length > 1) {
+      events.emit('toast', { text: `CODEX — ${fresh.length} parts logged.`, tone: 'info' });
+    }
   }
 
   private syncHeldItem(): void {
     const st = this.inventory.selectedStack;
+    if (st?.gun) {
+      const id = `gun:${st.gun.id}:${st.gun.parts.map((p) => `${p.part}${p.x}${p.y}`).join('')}`;
+      if (id === this.heldItem) return;
+      this.heldItem = id;
+      this.animator.setHeld(assembleGunHeld(st.gun.parts), 'gun');
+      this.viewModel.setHeld(assembleGunHeld(st.gun.parts), id);
+      return;
+    }
     const def: ItemDef | null = st ? ITEMS[st.item] : null;
-    const id = def && def.kind !== 'resource' ? def.model : null;
+    const id = def && def.kind !== 'resource' && def.kind !== 'component' && def.kind !== 'ammo' ? def.model : null;
     if (id === this.heldItem) return;
     this.heldItem = id;
     let model: THREE.Object3D | null = null;
@@ -495,7 +670,7 @@ export class Game {
       model = this.heldModels.get(id) ?? models.create(id, 1);
       this.heldModels.set(id, model);
     }
-    this.animator.setHeld(model);
+    this.animator.setHeld(model, 'tool');
     this.viewModel.setHeld(id ? models.create(id, 1) : null, id);
   }
 
@@ -520,7 +695,18 @@ export class Game {
     p.position.x = clamp(p.position.x, -limit, limit);
     p.position.z = clamp(p.position.z, -limit, limit);
 
-    this.gathering.update(dt, this.input.isDown('fire') && !this.buildMode.active);
+    const gunOut = !!this.inventory.equippedGun && !this.buildMode.active;
+    this.shooting.update(
+      dt,
+      gunOut && this.input.isDown('fire'),
+      gunOut && this.input.wasPressed('reload'),
+      gunOut && this.input.isDown('aim'),
+    );
+    if (!gunOut) {
+      this.player.load = 0;
+      this.player.aiming = false;
+      this.gathering.update(dt, this.input.isDown('fire') && !this.buildMode.active);
+    }
     if (this.buildMode.active) this.updateBuildMode();
     else this.updateHammer(dt);
 
@@ -541,6 +727,7 @@ export class Game {
 
     this.flow.update(dt);
     this.horde.update(dt);
+    this.defenses.update(dt);
     this.raid.update(dt);
     this.refreshRoamers(dt);
 
@@ -573,15 +760,22 @@ export class Game {
 
   private render(alpha: number, frameDt: number): void {
     if (this.input.wasPressedThisFrame('pause')) {
-      if (this.inventoryView.open) this.setInventoryOpen(false);
+      if (this.metaOverlay.open) this.metaOverlay.hide();
+      else if (this.inventoryView.open) this.setInventoryOpen(false);
+      else if (this.gunBench.isOpen) this.setGunBenchOpen(false);
       else if (this.buildMode.active) this.setBuildMode(false);
       else this.setPaused(this.state === 'playing');
     }
-    if (this.input.wasPressedThisFrame('inventory') && this.state === 'playing') this.setInventoryOpen(!this.inventoryView.open);
+    if (this.input.wasPressedThisFrame('inventory') && this.state === 'playing' && !this.gunBench.isOpen) this.setInventoryOpen(!this.inventoryView.open);
     if (this.input.wasPressedThisFrame('debug')) this.debug.toggle();
     if (this.input.wasPressedThisFrame('help') && this.state === 'playing') this.hud.toggleHelp();
+    if (this.input.wasPressedThisFrame('mute')) {
+      const muted = audio.toggleMute();
+      this.pauseScreen.syncSound();
+      events.emit('toast', { text: muted ? 'SOUND OFF. M to bring it back.' : 'SOUND ON.', tone: 'info' });
+    }
 
-    const playing = this.state === 'playing' && !this.inventoryView.open;
+    const playing = this.state === 'playing' && !this.inventoryView.open && !this.gunBench.isOpen;
     const dt = this.state === 'paused' ? 0 : frameDt * this.loop.timeScale;
     const p = this.player;
 
@@ -741,8 +935,11 @@ export class Game {
     );
 
     this.world.update(dt, this.renderPos);
+    this.weather.update(dt, this.rig.currentFocus);
     this.env.setToxic(this.survival.gas);
+    this.env.setWeather(this.weather.rain, this.weather.flash);
     this.env.update(dt, this.rig.currentFocus);
+    this.gasFx.update(dt, this.rig.currentFocus, this.renderPos, this.weather.rain);
     this.ovenGlow = damp(this.ovenGlow, this.oven.lit ? 1 : 0, 3, dt);
     for (const e of this.area.ovenLights) e.gain = this.ovenGlow;
     this.lights.update(dt, this.rig.currentFocus);
@@ -760,8 +957,40 @@ export class Game {
 
     if (this.colliderDebug?.visible && this.colliderDebugVersion !== this.collision.version) this.rebuildColliderDebug();
 
-    this.renderer.render(this.scene, this.rig.camera);
+    const hurt = this.lastHealth - p.health;
+    if (hurt > 1.5 && this.state === 'playing') {
+      this.post.pulseHurt(hurt / CONFIG.player.maxHealth);
+      sfx('player.hurt', { pitch: 0.9 + Math.random() * 0.2 });
+    }
+    this.lastHealth = p.health;
+    this.post.setLowHealth(p.alive && p.health < 30 ? (1 - p.health / 30) * 0.55 : 0);
+    this.post.update(dt, {
+      toxic: this.survival.gas * (p.filter <= 0 ? 1.1 : 0.4),
+      flash: this.weather.flash,
+      wet: this.weather.rain,
+    });
+    this.post.render(this.scene, this.rig.camera);
     this.floaters.update(dt, this.rig.camera);
+
+    this.rig.groundRight(this.camRight);
+    audio.setListener(this.renderPos.x, this.renderPos.z, this.camRight.x, this.camRight.z);
+    this.sound.update(frameDt, {
+      playing: this.state === 'playing' || this.state === 'paused',
+      paused: this.state === 'paused',
+      dead: this.state === 'dead',
+      raid: this.raid.active,
+      boss: !!this.horde.boss,
+      countdown: this.raid.timeLeft,
+      gas: this.survival.gas,
+      rain: this.weather.rain,
+      speed: Math.hypot(p.actualVelocity.x, p.actualVelocity.z),
+      sprinting: p.sprinting,
+      stamina: p.stamina / CONFIG.player.stamina.max,
+      x: this.renderPos.x,
+      z: this.renderPos.z,
+    });
+    const boss = this.horde.boss;
+    this.hud.setBoss(boss ? boss.def.name : null, boss ? boss.hp / boss.maxHp : 0, !!boss && boss.hp < boss.maxHp * 0.3);
 
     this.hud.setHealth(p.health, CONFIG.player.maxHealth);
     this.hud.setHunger(p.hunger, CONFIG.survival.maxHunger);
@@ -776,6 +1005,18 @@ export class Game {
     const fromCenter = this.area.homeZone.distanceFromCenter(this.renderPos);
     this.hud.setZone(this.insideZone, fromCenter - this.area.homeZone.radius);
     this.hud.setRaid(this.raid.active, this.raid.timeLeft, this.raid.raidNumber, this.horde.raidAlive);
+    const gun = this.inventory.equippedGun;
+    const gs = gun ? evaluateBuild(gun.parts).stats : null;
+    this.hud.setAmmo(
+      !!gs,
+      gun?.loaded ?? 0,
+      gs?.magSize ?? 0,
+      this.inventory.count('ammo'),
+      gs ? gs.fireMode : '',
+      this.shooting.jammed,
+      this.shooting.reloading ? this.shooting.reloadT / Math.max(0.2, gs?.reloadTime ?? 1) : 0,
+    );
+    this.gunBench.update(dt);
     const it = playing ? this.currentInteractable : null;
     this.hud.setPrompt(it ? it.verb : null, it?.label);
 
@@ -787,7 +1028,7 @@ export class Game {
     }
 
     const bm = this.buildMode;
-    this.buildUI.setBuild(playing && bm.active, bm.selected, bm.placement, this.input.mouseScreen.x, this.input.mouseScreen.y);
+    this.buildUI.setBuild(playing && bm.active, bm.tab, bm.selected, bm.placement, this.input.mouseScreen.x, this.input.mouseScreen.y);
     const card = playing && !bm.active && this.hammerTarget && this.building.pieces.has(this.hammerTarget) ? this.hammerTarget : null;
     this.buildUI.setPieceCard(card, this.demolishTime / CONFIG.building.demolishHoldTime);
     this.rig.groundForward(this.camForward);
@@ -813,6 +1054,8 @@ export class Game {
         zone: `${this.insideZone ? 'inside' : 'outside'} (${fromCenter.toFixed(1)}m)`,
         raid: `${this.raid.state} #${this.raid.raidNumber} ${this.raid.active ? `${this.horde.raidAlive} left` : formatClock(this.raid.timeLeft)}`,
         kills: this.horde.kills,
+        weather: `${this.weather.kind} rain ${this.weather.rain.toFixed(2)} wet ${this.weather.wet.toFixed(2)}`,
+        audio: audio.ctx ? `${audio.ctx.state}${audio.muted ? ' (muted)' : ''}` : 'locked',
         timeScale: this.loop.timeScale,
       };
     });
@@ -837,6 +1080,7 @@ export class Game {
 
   private applyPenalty(reason: PenaltyReason): void {
     this.setInventoryOpen(false);
+    this.setGunBenchOpen(false);
     this.setBuildMode(false);
     this.inventory.clear();
     this.player.teleport(this.area.spawn.x, this.area.spawn.z);
@@ -861,10 +1105,17 @@ export class Game {
     this.spawnRoamer();
   }
 
+  /** Wanderers between raids. Stalkers haunt the gas; the odd spitter or screamer turns up elsewhere. */
   private spawnRoamer(): void {
-    const a = this.roamRng.range(0, Math.PI * 2);
-    const r = this.roamRng.range(CONFIG.raid.roamMin, CONFIG.raid.roamMax);
-    this.horde.spawn(this.roamRng.chance(0.35) ? 'crawler' : 'shambler', Math.sin(a) * r, Math.cos(a) * r, false);
+    const rng = this.roamRng;
+    const a = rng.range(0, Math.PI * 2);
+    const r = rng.range(CONFIG.raid.roamMin, CONFIG.raid.roamMax);
+    const x = Math.sin(a) * r;
+    const z = Math.cos(a) * r;
+    const roll = rng.next();
+    let id: EnemyId = roll < 0.35 ? 'crawler' : roll < 0.47 ? 'spitter' : roll < 0.52 ? 'screamer' : 'shambler';
+    if (this.world.gasAt(x, z) > 0.2 && rng.chance(0.55)) id = 'stalker';
+    this.horde.spawn(id, x, z, false);
   }
 
   private debugSpawn(id: EnemyId): void {
@@ -875,10 +1126,14 @@ export class Game {
   private onResize = (): void => {
     this.renderer.setSize(window.innerWidth, window.innerHeight);
     this.rig.resize(window.innerWidth / window.innerHeight);
+    this.post.setSize(window.innerWidth, window.innerHeight);
+    this.weather.setPixelScale(window.innerHeight * this.renderer.getPixelRatio(), CONFIG.camera.fov);
   };
 }
 
-function formatClock(seconds: number): string {
-  const s = Math.max(0, Math.ceil(seconds));
-  return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
+function recipeLabel(id: string): string {
+  const craft = RECIPES.find((r) => r.id === id);
+  if (craft) return ITEMS[craft.output].name;
+  const oven = OVEN_RECIPES.find((r) => r.id === id);
+  return oven ? ITEMS[oven.output.item].name : id;
 }

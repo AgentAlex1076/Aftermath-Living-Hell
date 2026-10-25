@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { CONFIG } from '../data/config';
 import { FLOORABLE_TAG, HALF_TAG, type CollisionWorld } from '../physics/Collision';
+import { BUILD_TAG, DEPLOY_TAG } from './Building';
 
 const R = CONFIG.raid.fieldRadius;
 const CELL = CONFIG.raid.fieldCell;
@@ -12,49 +13,66 @@ const DIRS: [number, number, number][] = [
   [1, 1, 1.414], [1, -1, 1.414], [-1, 1, 1.414], [-1, -1, 1.414],
 ];
 
-const IGNORE_WALK = [FLOORABLE_TAG];
-const IGNORE_CRAWL = [FLOORABLE_TAG, HALF_TAG];
+/** Bits from `CollisionWorld.tagMaskAt`: 1 = untagged, then one per tag in this order. */
+const TAGS = [FLOORABLE_TAG, HALF_TAG, BUILD_TAG, DEPLOY_TAG];
+const SOLID = 1;
+const HALF = 4;
+const BUILT = 8 | 16;
+/** Which mask bits block each kind of mover. */
+const BLOCKS_WALK = SOLID | HALF | BUILT;
+const BLOCKS_CRAWL = SOLID | BUILT;
+const BLOCKS_CLIMB = SOLID;
+
+export type FlowMode = 'walk' | 'crawl' | 'climb';
 
 /**
- * A pair of flow fields covering the Home Zone and the spawn ring: one for walking mutants,
- * one that treats half-walls as open so crawlers can slip through. Rebuilt when colliders change.
+ * Flow fields covering the Home Zone and the spawn ring: one for walking mutants, one that treats
+ * half-walls as open so crawlers can slip through, and one that ignores player-built pieces for
+ * climbers. Rebuilt when colliders change.
  */
 export class FlowField {
   private readonly walkCost: Float32Array;
   private readonly crawlCost: Float32Array;
+  private readonly climbCost: Float32Array;
   private readonly walkDir: Float32Array;
   private readonly crawlDir: Float32Array;
+  private readonly climbDir: Float32Array;
+  private readonly masks: Uint8Array;
   private lastVersion = -1;
   private cooldown = 0;
   debug: THREE.LineSegments | null = null;
 
   constructor(private readonly collision: CollisionWorld) {
     const cells = N * N;
+    collision.setWatch(R + CELL * 2);
+    this.masks = new Uint8Array(cells);
     this.walkCost = new Float32Array(cells);
     this.crawlCost = new Float32Array(cells);
+    this.climbCost = new Float32Array(cells);
     this.walkDir = new Float32Array(cells * 2);
     this.crawlDir = new Float32Array(cells * 2);
+    this.climbDir = new Float32Array(cells * 2);
     this.rebuild();
   }
 
   /** Call every tick. Rebuilds at most a few times a second after the collision world changes. */
   update(dt: number): void {
     this.cooldown = Math.max(0, this.cooldown - dt);
-    if (this.collision.version !== this.lastVersion && this.cooldown <= 0) {
+    if (this.collision.watchVersion !== this.lastVersion && this.cooldown <= 0) {
       this.rebuild();
       this.cooldown = 0.28;
     }
   }
 
   /** Unit ground direction toward the hut, or (0,0) if this spot is boxed in. */
-  sample(x: number, z: number, crawl = false): { x: number; z: number } {
+  sample(x: number, z: number, mode: FlowMode = 'walk'): { x: number; z: number } {
     const gx = x / CELL + GOAL;
     const gz = z / CELL + GOAL;
     const x0 = Math.floor(gx);
     const z0 = Math.floor(gz);
     const tx = gx - x0;
     const tz = gz - z0;
-    const dir = crawl ? this.crawlDir : this.walkDir;
+    const dir = mode === 'climb' ? this.climbDir : mode === 'crawl' ? this.crawlDir : this.walkDir;
     const ax = this.dirAt(dir, x0, z0, 0);
     const az = this.dirAt(dir, x0, z0, 1);
     const bx = this.dirAt(dir, x0 + 1, z0, 0);
@@ -76,9 +94,15 @@ export class FlowField {
   }
 
   rebuild(): void {
-    this.lastVersion = this.collision.version;
-    integrate(this.collision, this.walkCost, this.walkDir, IGNORE_WALK);
-    integrate(this.collision, this.crawlCost, this.crawlDir, IGNORE_CRAWL);
+    this.lastVersion = this.collision.watchVersion;
+    for (let iz = 0; iz < N; iz++) {
+      for (let ix = 0; ix < N; ix++) {
+        this.masks[iz * N + ix] = this.collision.tagMaskAt((ix - GOAL) * CELL, (iz - GOAL) * CELL, CELL * 0.42, TAGS);
+      }
+    }
+    integrate(this.masks, BLOCKS_WALK, this.walkCost, this.walkDir);
+    integrate(this.masks, BLOCKS_CRAWL, this.crawlCost, this.crawlDir);
+    integrate(this.masks, BLOCKS_CLIMB, this.climbCost, this.climbDir);
     if (this.debug?.visible) this.rebuildDebug();
   }
 
@@ -122,15 +146,9 @@ export class FlowField {
   }
 }
 
-function integrate(world: CollisionWorld, cost: Float32Array, dir: Float32Array, ignore: readonly string[]): void {
+function integrate(masks: Uint8Array, blocks: number, cost: Float32Array, dir: Float32Array): void {
   const blocked = new Uint8Array(N * N);
-  for (let iz = 0; iz < N; iz++) {
-    for (let ix = 0; ix < N; ix++) {
-      const x = (ix - GOAL) * CELL;
-      const z = (iz - GOAL) * CELL;
-      blocked[iz * N + ix] = world.blockedAt(x, z, CELL * 0.42, ignore) ? 1 : 0;
-    }
-  }
+  for (let i = 0; i < blocked.length; i++) blocked[i] = masks[i] & blocks ? 1 : 0;
 
   cost.fill(1e9);
   dir.fill(0);

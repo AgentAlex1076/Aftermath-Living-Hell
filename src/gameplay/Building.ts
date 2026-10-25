@@ -2,9 +2,10 @@ import * as THREE from 'three';
 import { CONFIG } from '../data/config';
 import { events } from '../core/EventBus';
 import { damp } from '../core/math';
+import { sfx } from '../audio/AudioEngine';
 import { ITEMS, type ItemDef } from '../data/items';
 import type { ItemAmount } from '../data/loot';
-import { TIERS, TIER_ORDER, nextTier, pieceCost, pieceMaxHp, pieceModel, type PieceDef, type TierId } from '../data/buildables';
+import { TIERS, TIER_ORDER, hopperVerb, nextTier, pieceCost, pieceMaxHp, pieceModel, type PieceDef, type TierId } from '../data/buildables';
 import { DOOR_SIZE, wallHeight } from '../models/buildables';
 import { models } from '../models/ModelRegistry';
 import { disposeMerged, mergeColored } from '../models/merge';
@@ -283,6 +284,7 @@ export class Building {
     this.pay(p.cost);
     const piece = this.spawn(p.def, 'wood', p.x, p.z, p.rot, p.cell, p.edge);
     this.built++;
+    events.emit('build:placed', { id: piece.def.id });
     const top = new THREE.Vector3(p.x, Math.min(piece.size.h, 1.6) + 0.4, p.z);
     this.ctx.debris.burst(p.x, 0.3, p.z, TIERS.wood.color, piece.def.kind === 'foundation' ? 18 : 10);
     this.ctx.floaters.spawn(top, piece.def.kind === 'foundation' ? 'THUD!' : 'KA-CHUNK!', 'word');
@@ -311,8 +313,9 @@ export class Building {
     if (edge && def.kind === 'door') this.doors.set(edgeKey(edge), piece);
 
     if (piece.storage) {
+      const hop = hopperVerb(def.hopper);
       piece.interactable = this.ctx.interactions.add({
-        id: `build:${piece.uid}`, label: def.name, verb: 'Open', position: new THREE.Vector3(x, 0, z), radius: 1.7,
+        id: `build:${piece.uid}`, label: hop.label, verb: hop.verb, position: new THREE.Vector3(x, 0, z), radius: 1.7,
         onInteract: () => this.ctx.openStorage(piece),
       });
     } else if (piece.door) {
@@ -341,8 +344,8 @@ export class Building {
       piece.door.hinge = obj.getObjectByName('hinge') ?? null;
       this.applySwing(piece);
       if (!piece.door.open) this.addDoorCollider(piece);
-    } else {
-      const tag = def.kind === 'deployable' ? DEPLOY_TAG : def.shape === 'half' ? HALF_TAG : BUILD_TAG;
+    } else if (!def.walkThrough) {
+      const tag = def.cover || def.shape === 'half' ? HALF_TAG : def.kind === 'deployable' ? DEPLOY_TAG : BUILD_TAG;
       piece.colliders = this.ctx.collision.addFromObject(obj, tag);
     }
     if (def.kind === 'wall' || def.kind === 'door') piece.occluder = this.ctx.occlusion.register(obj, 0.2);
@@ -419,7 +422,8 @@ export class Building {
     const tier = TIERS[piece.tier];
     const at = new THREE.Vector3(piece.x, Math.min(piece.size.h, 1.8), piece.z);
     this.ctx.debris.burst(piece.x, at.y * 0.6, piece.z, tier.color, 6);
-    this.ctx.floaters.spawn(at, tier.hitWords[Math.floor(Math.random() * tier.hitWords.length)], 'word');
+    this.ctx.floaters.spawn(at, tier.hitWords[Math.floor(Math.random() * tier.hitWords.length)], 'word', undefined, 0, 0, amount);
+    sfx('build.hit', { x: piece.x, z: piece.z, param: piece.tier === 'wood' ? 0 : 1, pitch: 0.9 + Math.random() * 0.2 });
     if (piece.hp <= 0) this.destroy(piece, 'destroyed');
   }
 
@@ -434,7 +438,10 @@ export class Building {
     if (piece.edge && piece.def.kind === 'wall') this.walls.delete(edgeKey(piece.edge));
     if (piece.edge && piece.def.kind === 'door') this.doors.delete(edgeKey(piece.edge));
     if (piece.storage) {
-      if (cause !== 'demolished' && !piece.storage.empty) events.emit('toast', { text: 'A storage box was smashed. Everything in it is gone.', tone: 'danger' });
+      if (cause !== 'demolished' && !piece.storage.empty) {
+        const what = piece.def.hopper === 'stash' ? 'A storage box' : piece.def.name;
+        events.emit('toast', { text: `${what} was smashed. Everything in it is gone.`, tone: 'danger' });
+      }
       this.ctx.storageGone(piece);
     }
 
@@ -442,6 +449,7 @@ export class Building {
     const h = Math.min(piece.size.h, 2);
     this.ctx.debris.burst(piece.x, h * 0.5, piece.z, tier.color, piece.def.kind === 'foundation' ? 20 : 30);
     const word = cause === 'collapsed' ? 'KRRRUMBLE!' : cause === 'demolished' ? 'KER-RASH!' : 'KRA-KOOM!';
+    sfx('build.break', { x: piece.x, z: piece.z, param: piece.tier === 'wood' ? 0 : 1 });
     this.ctx.floaters.spawn(new THREE.Vector3(piece.x, h + 0.6, piece.z), word, 'word', '#f2b705', cause === 'collapsed' ? 0.15 : 0);
     events.emit('camera:shake', { amount: cause === 'collapsed' ? 0.2 : 0.3 });
 
@@ -475,7 +483,7 @@ export class Building {
     let best: Piece | null = null;
     let bestD = reach;
     for (const p of this.pieces) {
-      if (p.def.kind === 'foundation') continue;
+      if (p.def.kind === 'foundation' || p.def.walkThrough) continue;
       const d = this.distanceTo(p, x, z);
       if (d < bestD) {
         bestD = d;
@@ -538,6 +546,7 @@ export class Building {
     piece.hp += restore;
     this.ctx.debris.burst(piece.x, at.y * 0.5, piece.z, TIERS[piece.tier].color, 5);
     this.ctx.floaters.spawn(at, 'TAP-TAP!', 'word');
+    sfx('build.repair', { x: piece.x, z: piece.z });
     this.ctx.floaters.spawn(at.clone().setY(at.y - 0.5), `+${Math.round(restore)} HP`, 'gain', '#8cff3a', 0.05);
     events.emit('camera:shake', { amount: 0.05 });
   }
@@ -564,15 +573,34 @@ export class Building {
     const tier = TIERS[next];
     this.ctx.debris.burst(piece.x, Math.min(piece.size.h, 2) * 0.5, piece.z, tier.color, 26);
     this.ctx.floaters.spawn(at, 'UPGRADED!', 'word', tier.color);
+    sfx('build.upgrade', { x: piece.x, z: piece.z });
     this.ctx.floaters.spawn(at.clone().setY(at.y - 0.55), tier.name.toUpperCase(), 'gain', tier.color, 0.1);
     events.emit('camera:shake', { amount: 0.18 });
+  }
+
+  /** Moves hopper / box contents into the player bag. Returns false if something would not fit. */
+  dumpStorage(piece: Piece): boolean {
+    const box = piece.storage;
+    if (!box || box.empty) return true;
+    for (let i = 0; i < box.size; i++) {
+      if (!box.slots[i]) continue;
+      if (!box.transfer(i, this.ctx.inventory)) return false;
+    }
+    return box.empty;
   }
 
   /** Tears a piece down for a partial refund. Returns false if it refused. */
   demolish(piece: Piece): boolean {
     if (piece.storage && !piece.storage.empty) {
-      events.emit('toast', { text: 'Empty the box before you tear it down.', tone: 'warn' });
-      return false;
+      if (piece.def.hopper && piece.def.hopper !== 'stash') {
+        if (!this.dumpStorage(piece)) {
+          events.emit('toast', { text: 'Make room before you tear it down.', tone: 'warn' });
+          return false;
+        }
+      } else {
+        events.emit('toast', { text: 'Empty the box before you tear it down.', tone: 'warn' });
+        return false;
+      }
     }
     const at = new THREE.Vector3(piece.x, 1.2, piece.z);
     let lost = false;

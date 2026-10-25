@@ -1,4 +1,4 @@
-export type ItemKind = 'resource' | 'component' | 'tool' | 'consumable' | 'food';
+export type ItemKind = 'resource' | 'component' | 'tool' | 'consumable' | 'food' | 'gunPart' | 'gun' | 'ammo';
 export type ToolKind = 'axe' | 'pickaxe' | 'crowbar' | 'hammer';
 
 export interface ToolStats {
@@ -105,6 +105,41 @@ export const ITEMS = {
     id: 'salvagedPickaxe', name: 'Salvaged Pickaxe', kind: 'tool', stack: 1, model: 'item.salvagedPickaxe', color: '#b9c2c4',
     description: 'Heavy plate head on a pipe handle. Chews through rock and wrecks.',
     tool: { kind: 'pickaxe', tier: 2, power: 40, swingTime: 0.72 },
+  },
+
+  rustedReceiver: { id: 'rustedReceiver', name: 'Rusted Receiver', kind: 'gunPart', stack: 8, model: 'part.rustedReceiver', color: '#c47a3a', description: 'A pitted action pulled from a wreck. Everything else bolts onto this.' },
+  pipeReceiver: { id: 'pipeReceiver', name: 'Pipe Receiver', kind: 'gunPart', stack: 8, model: 'part.pipeReceiver', color: '#c4c1b8', description: 'Scrap pipe and a salvaged bolt. Ugly. Fires.' },
+  militaryReceiver: { id: 'militaryReceiver', name: 'Military Receiver', kind: 'gunPart', stack: 8, model: 'part.militaryReceiver', color: '#6fd3ff', description: 'Stamped steel from a real armoury. Tight tolerances.' },
+  rustedBarrel: { id: 'rustedBarrel', name: 'Rusted Barrel', kind: 'gunPart', stack: 8, model: 'part.rustedBarrel', color: '#c47a3a', description: 'A length of pipe. Do not look down it.' },
+  longBarrel: { id: 'longBarrel', name: 'Long Barrel', kind: 'gunPart', stack: 8, model: 'part.longBarrel', color: '#c4c1b8', description: 'Reach and velocity. Slow to swing onto a target.' },
+  shortBarrel: { id: 'shortBarrel', name: 'Stub Barrel', kind: 'gunPart', stack: 8, model: 'part.shortBarrel', color: '#c4c1b8', description: 'Close-in work. Loud, wide, fast to point.' },
+  protoBarrel: { id: 'protoBarrel', name: 'Lab Barrel', kind: 'gunPart', stack: 8, model: 'part.protoBarrel', color: '#d4a0ff', description: 'Lined with something that still ticks. Hot and accurate.' },
+  woodGrip: { id: 'woodGrip', name: 'Wood Grip', kind: 'gunPart', stack: 8, model: 'part.woodGrip', color: '#c47a3a', description: 'A carved handle. Put it where your hand wants to be.' },
+  tapedGrip: { id: 'tapedGrip', name: 'Taped Grip', kind: 'gunPart', stack: 8, model: 'part.tapedGrip', color: '#c4c1b8', description: 'Cloth tape over scrap. Holds when your gloves are slick.' },
+  woodHandle: { id: 'woodHandle', name: 'Wood Handle', kind: 'gunPart', stack: 8, model: 'part.woodHandle', color: '#c47a3a', description: 'A second handhold. Balance, or just something to hang onto.' },
+  polymerHandle: { id: 'polymerHandle', name: 'Polymer Handle', kind: 'gunPart', stack: 8, model: 'part.polymerHandle', color: '#6fd3ff', description: 'Light, stiff, does not splinter.' },
+  woodStock: { id: 'woodStock', name: 'Wood Stock', kind: 'gunPart', stack: 8, model: 'part.woodStock', color: '#c47a3a', description: 'Shoulder it. Recoil goes somewhere that is not your teeth.' },
+  foldingStock: { id: 'foldingStock', name: 'Folding Stock', kind: 'gunPart', stack: 8, model: 'part.foldingStock', color: '#6fd3ff', description: 'Clips tight. Less weight, less help.' },
+  rustedTrigger: { id: 'rustedTrigger', name: 'Rusted Trigger', kind: 'gunPart', stack: 8, model: 'part.rustedTrigger', color: '#c47a3a', description: 'One click, one bang. Add more and it gets uglier and faster.' },
+  hairTrigger: { id: 'hairTrigger', name: 'Hair Trigger', kind: 'gunPart', stack: 8, model: 'part.hairTrigger', color: '#6fd3ff', description: 'A breath sets it off. Stack them and the gun runs away from you.' },
+  stickMag: { id: 'stickMag', name: 'Stick Mag', kind: 'gunPart', stack: 8, model: 'part.stickMag', color: '#c47a3a', description: 'Bent tin and a spring that still remembers its job.' },
+  drumMag: { id: 'drumMag', name: 'Drum Mag', kind: 'gunPart', stack: 8, model: 'part.drumMag', color: '#6fd3ff', description: 'A lot of rounds. A lot of waiting when it is empty.' },
+  ironSight: { id: 'ironSight', name: 'Iron Sight', kind: 'gunPart', stack: 8, model: 'part.ironSight', color: '#c47a3a', description: 'A notch and a post. Only works sitting on the receiver.' },
+  reflexSight: { id: 'reflexSight', name: 'Reflex Sight', kind: 'gunPart', stack: 8, model: 'part.reflexSight', color: '#6fd3ff', description: 'A glowing pip. Still useless if you bolt it to the barrel.' },
+  rustedMuzzle: { id: 'rustedMuzzle', name: 'Rusted Brake', kind: 'gunPart', stack: 8, model: 'part.rustedMuzzle', color: '#c47a3a', description: 'A cap with holes punched in it. Softens the kick a little.' },
+  compensator: { id: 'compensator', name: 'Compensator', kind: 'gunPart', stack: 8, model: 'part.compensator', color: '#6fd3ff', description: 'Vents the blast up. The gun stays on the thing you pointed at.' },
+  rustedRail: { id: 'rustedRail', name: 'Rusted Rail', kind: 'gunPart', stack: 8, model: 'part.rustedRail', color: '#c47a3a', description: 'A bar under the barrel. Hang a hand on it.' },
+  laserModule: { id: 'laserModule', name: 'Laser Module', kind: 'gunPart', stack: 8, model: 'part.laserModule', color: '#d4a0ff', description: 'A sickly green dot. Helps until the filter fogs.' },
+  rustedConverter: { id: 'rustedConverter', name: 'Powder Converter', kind: 'gunPart', stack: 8, model: 'part.rustedConverter', color: '#c47a3a', description: 'Feeds scrap cartridges. Fine until it is not.' },
+  slugConverter: { id: 'slugConverter', name: 'Slug Converter', kind: 'gunPart', stack: 8, model: 'part.slugConverter', color: '#d4a0ff', description: 'Crams two rounds into one ugly slug. Hits like a thrown brick.' },
+
+  ammo: {
+    id: 'ammo', name: 'Scrap Cartridges', kind: 'ammo', stack: 80, model: 'item.ammo', color: '#d4b46a',
+    description: 'Hand-rolled brass and black powder. Feeds any gun you bolt together.',
+  },
+  craftedGun: {
+    id: 'craftedGun', name: 'Assembled Gun', kind: 'gun', stack: 1, model: 'item.craftedGun', color: '#f2b705',
+    description: 'A gun you built. The parts stay where you put them.',
   },
 } as const satisfies Record<string, ItemDef>;
 

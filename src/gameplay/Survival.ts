@@ -3,7 +3,7 @@ import { events } from '../core/EventBus';
 import type { Player } from '../entities/Player';
 import type { World } from '../world/World';
 
-export type DeathCause = 'gas' | 'starvation' | 'maul' | 'other';
+export type DeathCause = 'gas' | 'starvation' | 'maul' | 'acid' | 'other';
 
 const GAS_THRESHOLD = 0.04;
 
@@ -70,6 +70,8 @@ export class Survival {
         return 'Starved in the ruins. Nobody came.';
       case 'maul':
         return 'The horde tore you apart.';
+      case 'acid':
+        return 'Spitter acid ate through the suit.';
       default:
         return 'Something in the wasteland finished you off.';
     }
