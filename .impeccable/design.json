@@ -1,0 +1,180 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-10-25T10:17:16Z",
+  "title": "Design System: Aftermath: Living Hell",
+  "extensions": {
+    "colorMeta": {
+      "ink": { "role": "neutral", "displayName": "Ink", "canonical": "oklch(15.1% 0.004 285.9)", "tonalRamp": ["#0b0b0d", "#141619", "#1d2024", "#2b2f35", "#343a42", "#3b4048", "#b8ae98", "#f1e7cf"] },
+      "ink-2": { "role": "neutral", "displayName": "Panel Ink", "canonical": "oklch(19.9% 0.007 258.4)", "tonalRamp": ["#0b0b0d", "#141619", "#1d2024", "#2b2f35", "#343a42", "#3b4048", "#b8ae98", "#f1e7cf"] },
+      "ink-3": { "role": "neutral", "displayName": "Recess Ink", "canonical": "oklch(24.2% 0.009 255.6)", "tonalRamp": ["#0b0b0d", "#141619", "#1d2024", "#2b2f35", "#343a42", "#3b4048", "#b8ae98", "#f1e7cf"] },
+      "ink-4": { "role": "neutral", "displayName": "Raised Ink", "canonical": "oklch(30.4% 0.012 258.4)", "tonalRamp": ["#0b0b0d", "#141619", "#1d2024", "#2b2f35", "#343a42", "#3b4048", "#b8ae98", "#f1e7cf"] },
+      "ink-5": { "role": "neutral", "displayName": "Edge Ink", "canonical": "oklch(37.0% 0.015 259.8)", "tonalRamp": ["#0b0b0d", "#141619", "#1d2024", "#2b2f35", "#343a42", "#3b4048", "#b8ae98", "#f1e7cf"] },
+      "well": { "role": "neutral", "displayName": "Slot Well", "canonical": "oklch(34.6% 0.016 255.6)", "tonalRamp": ["#0b0b0d", "#141619", "#1d2024", "#2b2f35", "#343a42", "#3b4048", "#b8ae98", "#f1e7cf"] },
+      "paper": { "role": "neutral", "displayName": "Paper Cream", "canonical": "oklch(93.0% 0.034 88.1)", "tonalRamp": ["oklch(15% 0.015 88.1)", "oklch(25% 0.02 88.1)", "oklch(35% 0.025 88.1)", "oklch(45% 0.03 88.1)", "oklch(58% 0.033 88.1)", "oklch(75.3% 0.033 86.5)", "oklch(85% 0.034 88.1)", "oklch(93% 0.034 88.1)"] },
+      "paper-dim": { "role": "neutral", "displayName": "Faded Paper", "canonical": "oklch(75.3% 0.033 86.5)", "tonalRamp": ["oklch(15% 0.015 86.5)", "oklch(25% 0.02 86.5)", "oklch(35% 0.025 86.5)", "oklch(45% 0.03 86.5)", "oklch(58% 0.033 86.5)", "oklch(75.3% 0.033 86.5)", "oklch(85% 0.034 86.5)", "oklch(93% 0.034 88.1)"] },
+      "hazard": { "role": "primary", "displayName": "Hazard Yellow", "canonical": "oklch(81.1% 0.166 85.0)", "tonalRamp": ["oklch(15% 0.04 85)", "oklch(25% 0.06 85)", "oklch(35% 0.08 85)", "oklch(45% 0.1 85)", "oklch(58% 0.12 85)", "oklch(70% 0.145 85)", "oklch(81.1% 0.166 85)", "oklch(95% 0.06 85)"] },
+      "hazard-hot": { "role": "primary", "displayName": "Hot Hazard", "canonical": "oklch(87.9% 0.164 91.3)", "tonalRamp": ["oklch(15% 0.04 91.3)", "oklch(25% 0.06 91.3)", "oklch(35% 0.08 91.3)", "oklch(45% 0.1 91.3)", "oklch(58% 0.12 91.3)", "oklch(70% 0.145 91.3)", "oklch(87.9% 0.164 91.3)", "oklch(95% 0.06 91.3)"] },
+      "blood": { "role": "secondary", "displayName": "Blood Red", "canonical": "oklch(59.1% 0.212 28.0)", "tonalRamp": ["oklch(15% 0.06 28)", "oklch(25% 0.1 28)", "oklch(35% 0.13 28)", "oklch(40.8% 0.153 28.5)", "oklch(59.1% 0.212 28)", "oklch(70% 0.17 28)", "oklch(75.8% 0.145 29)", "oklch(95% 0.03 28)"] },
+      "blood-deep": { "role": "secondary", "displayName": "Deep Blood", "canonical": "oklch(40.8% 0.153 28.5)", "tonalRamp": ["oklch(15% 0.06 28)", "oklch(25% 0.1 28)", "oklch(35% 0.13 28)", "oklch(40.8% 0.153 28.5)", "oklch(59.1% 0.212 28)", "oklch(70% 0.17 28)", "oklch(75.8% 0.145 29)", "oklch(95% 0.03 28)"] },
+      "blood-text": { "role": "secondary", "displayName": "Blood Text", "canonical": "oklch(75.8% 0.145 29.0)", "tonalRamp": ["oklch(15% 0.06 28)", "oklch(25% 0.1 28)", "oklch(35% 0.13 28)", "oklch(40.8% 0.153 28.5)", "oklch(59.1% 0.212 28)", "oklch(70% 0.17 28)", "oklch(75.8% 0.145 29)", "oklch(95% 0.03 28)"] },
+      "toxic": { "role": "tertiary", "displayName": "Toxic Green", "canonical": "oklch(89.7% 0.245 135.7)", "tonalRamp": ["oklch(15% 0.04 135.7)", "oklch(25% 0.07 135.7)", "oklch(35% 0.09 135.7)", "oklch(47.5% 0.114 135.7)", "oklch(58% 0.15 135.7)", "oklch(70% 0.19 135.7)", "oklch(82% 0.225 135.7)", "oklch(89.7% 0.245 135.7)"] },
+      "toxic-deep": { "role": "tertiary", "displayName": "Deep Toxic", "canonical": "oklch(47.5% 0.114 135.7)", "tonalRamp": ["oklch(15% 0.04 135.7)", "oklch(25% 0.07 135.7)", "oklch(35% 0.09 135.7)", "oklch(47.5% 0.114 135.7)", "oklch(58% 0.15 135.7)", "oklch(70% 0.19 135.7)", "oklch(82% 0.225 135.7)", "oklch(89.7% 0.245 135.7)"] },
+      "ember": { "role": "tertiary", "displayName": "Ember Orange", "canonical": "oklch(75.0% 0.168 51.2)", "tonalRamp": ["oklch(15% 0.04 51.2)", "oklch(25% 0.07 51.2)", "oklch(35% 0.09 51.2)", "oklch(45% 0.11 51.2)", "oklch(58% 0.14 51.2)", "oklch(75% 0.168 51.2)", "oklch(85% 0.11 51.2)", "oklch(95% 0.04 51.2)"] }
+    },
+    "typographyMeta": {
+      "display": { "displayName": "Display", "purpose": "The AFTERMATH title and sibling full-screen titles; hazard or paper fill, 3-4px ink stroke, hard offset shadow, rotated -2 to -3deg." },
+      "splash": { "displayName": "Splash", "purpose": "Raid and alert band titles, skewY -3deg, slammed in from 1.6x scale." },
+      "headline": { "displayName": "Headline", "purpose": "Bangers panel title slabs (BACKPACK, CRAFTING, GUN BENCH, BUILD MODE) and the 30px boss name." },
+      "sfx": { "displayName": "SFX", "purpose": "World-space comic onomatopoeia on hits; size scaled per hit, tinted, 3px ink stroke." },
+      "numeral": { "displayName": "Numeral", "purpose": "Hero numbers: health 64px, ammo 56px, raid clock 38px, death score 56-92px, run stats 34px." },
+      "button": { "displayName": "Button", "purpose": "Full-screen menu buttons; secondary drops to 20px." },
+      "title": { "displayName": "Title", "purpose": "Item names in tooltips and Codex cards, hotbar item name, death cause." },
+      "label": { "displayName": "Label", "purpose": "Chips, tabs, row buttons, raid label, zone chip, biome caption, section headers." },
+      "caption": { "displayName": "Caption", "purpose": "Upright 700 captions: bar labels, hints, stat captions, recipe times and reasons." },
+      "body": { "displayName": "Body", "purpose": "Cover tagline, max 40ch." },
+      "body-small": { "displayName": "Body Small", "purpose": "Tooltip and Codex blurbs, ledger cause of death." }
+    },
+    "shadows": [
+      { "name": "plate-sm", "value": "4px 3px 0 var(--blood)", "purpose": "Row-button hover and small slabs; 3px 3px 0 ink under floating gain/warn text." },
+      { "name": "plate-md", "value": "7px 6px 0 var(--blood)", "purpose": "Primary button at rest, raid timer, selected slot (5px 6px), panel title (6px 5px), toasts (5px 5px in tone color)." },
+      { "name": "plate-lg", "value": "9px 8px 0 var(--ink)", "purpose": "Death score slab; primary button hover uses 10px 7px 0 blood." },
+      { "name": "lift", "value": "0 10px 28px rgba(0, 0, 0, 0.5)", "purpose": "Ambient separation for HUD slabs over the bright world; always secondary to a plate." },
+      { "name": "legible", "value": "0 2px 0 var(--ink), 0 0 14px rgba(0, 0, 0, 0.7)", "purpose": "Text-shadow for paper text sitting directly over the 3D scene." },
+      { "name": "icon-rim", "value": "drop-shadow(0 0 1.5px rgba(241, 231, 207, 0.6)) drop-shadow(2px 2px 0 rgba(11, 11, 13, 0.75))", "purpose": "Filter on every rendered 3D item icon so dark models read on dark wells." },
+      { "name": "keycap-lip", "value": "0 4px 0 var(--paper-dim), 0 10px 28px rgba(0, 0, 0, 0.5)", "purpose": "Physical keycap bottom edge on paper key badges." },
+      { "name": "danger-pulse", "value": "inset 0 0 140px 30px rgba(224, 48, 42, 0.55)", "purpose": "Screen-edge red pulse at low health; the only colored blur in the system." }
+    ],
+    "motion": [
+      { "name": "ease-slam", "value": "cubic-bezier(0.16, 1, 0.3, 1)", "purpose": "Entrances, panel rise, title and splash slams, toasts, hotbar name, slot select." },
+      { "name": "ease-out", "value": "cubic-bezier(0.22, 1, 0.36, 1)", "purpose": "Button hover shift and chevron reveal (180ms); death band wipe." },
+      { "name": "panel-rise", "value": "transform 0.3s var(--ease-slam), opacity 0.18s ease", "purpose": "Panels rise 18px into place on open; side panel staggers 40ms." },
+      { "name": "band-wipe", "value": "2.4s var(--ease-out)", "purpose": "Splash band wipes in left to right, holds, wipes out; title slams from 1.6x." },
+      { "name": "alarm-blink", "value": "0.8s steps(2, jump-none) infinite", "purpose": "Low-state bar outline flips to blood in hard steps." },
+      { "name": "chip-shake", "value": "0.9-2.4s ease-in-out infinite", "purpose": "Brief 2deg wobble on alarming chips (raid soon/imminent, outside zone, choking)." },
+      { "name": "reduced-motion", "value": "animation and transition durations 0.01ms", "purpose": "All motion collapses under prefers-reduced-motion." }
+    ],
+    "breakpoints": [
+      { "name": "bench-stack", "value": "980px" },
+      { "name": "ledger-stack", "value": "860px" }
+    ]
+  },
+  "components": [
+    {
+      "name": "Primary Button",
+      "kind": "button",
+      "refersTo": "button-primary",
+      "description": "Hazard menu slab with a blood plate; jumps right and reveals an ink chevron on hover.",
+      "html": "<button class=\"ds-btn\">ENTER THE WASTELAND</button>",
+      "css": ".ds-btn { position: relative; min-width: 300px; font-family: var(--font-ui, 'Barlow Condensed', sans-serif); font-style: italic; font-weight: 800; font-size: 26px; letter-spacing: 0.04em; text-align: left; color: var(--ink, #0b0b0d); background: var(--hazard, #f2b705); border: 0; padding: 12px 30px 10px 26px; cursor: pointer; transform: skewX(-12deg); box-shadow: 7px 6px 0 var(--blood, #e0302a); transition: transform 0.18s cubic-bezier(0.22, 1, 0.36, 1), box-shadow 0.18s cubic-bezier(0.22, 1, 0.36, 1), background 0.12s ease; } .ds-btn::before { content: ''; position: absolute; left: 9px; top: 50%; width: 9px; height: 14px; margin-top: -7px; background: currentColor; clip-path: polygon(0 0, 100% 50%, 0 100%); opacity: 0; transform: translateX(-6px); transition: opacity 0.15s ease, transform 0.18s cubic-bezier(0.22, 1, 0.36, 1); } .ds-btn:hover, .ds-btn:focus-visible { background: var(--hazard-hot, #ffd23a); transform: skewX(-12deg) translateX(8px); box-shadow: 10px 7px 0 var(--blood, #e0302a); } .ds-btn:hover::before, .ds-btn:focus-visible::before { opacity: 1; transform: none; } .ds-btn:focus-visible { outline: 3px solid var(--hazard, #f2b705); outline-offset: 3px; } .ds-btn:active { transform: skewX(-12deg) translateX(4px) translateY(2px); box-shadow: 3px 2px 0 var(--blood, #e0302a); }"
+    },
+    {
+      "name": "Secondary Button",
+      "kind": "button",
+      "refersTo": "button-secondary",
+      "description": "Raised ink slab with a faint paper outline; turns paper with a hazard plate on hover.",
+      "html": "<button class=\"ds-btn-2\">CODEX</button>",
+      "css": ".ds-btn-2 { min-width: 300px; font-family: var(--font-ui, 'Barlow Condensed', sans-serif); font-style: italic; font-weight: 800; font-size: 20px; letter-spacing: 0.04em; text-align: left; color: var(--paper, #f1e7cf); background: var(--ink-4, #2b2f35); border: 0; outline: 2px solid rgba(241, 231, 207, 0.22); outline-offset: -2px; padding: 9px 24px 8px 24px; cursor: pointer; transform: skewX(-12deg); transition: transform 0.18s cubic-bezier(0.22, 1, 0.36, 1), box-shadow 0.18s cubic-bezier(0.22, 1, 0.36, 1), background 0.12s ease, color 0.12s ease; } .ds-btn-2:hover, .ds-btn-2:focus-visible { color: var(--ink, #0b0b0d); background: var(--paper, #f1e7cf); transform: skewX(-12deg) translateX(8px); box-shadow: 7px 5px 0 var(--hazard, #f2b705); } .ds-btn-2:focus-visible { outline: 3px solid var(--hazard, #f2b705); outline-offset: 3px; }"
+    },
+    {
+      "name": "Row Button",
+      "kind": "button",
+      "refersTo": "button-row",
+      "description": "Compact hazard action in recipe rows; blood plate appears on hover, disabled drops to recess ink.",
+      "html": "<button class=\"ds-rbtn\">CRAFT</button> <button class=\"ds-rbtn ds-rbtn-ghost\">TAKE GUN</button> <button class=\"ds-rbtn\" disabled>CRAFT</button>",
+      "css": ".ds-rbtn { font-family: var(--font-ui, 'Barlow Condensed', sans-serif); font-style: italic; font-weight: 800; font-size: 15px; letter-spacing: 0.06em; color: var(--ink, #0b0b0d); background: var(--hazard, #f2b705); border: 0; padding: 5px 12px 4px; cursor: pointer; transform: skewX(-12deg); transition: transform 0.1s ease, background 0.1s ease, box-shadow 0.1s ease; } .ds-rbtn:hover:not(:disabled), .ds-rbtn:focus-visible { background: var(--hazard-hot, #ffd23a); box-shadow: 4px 3px 0 var(--blood, #e0302a); transform: skewX(-12deg) translate(-1px, -1px); } .ds-rbtn:focus-visible { outline: 3px solid var(--hazard, #f2b705); outline-offset: 3px; } .ds-rbtn:active:not(:disabled) { transform: skewX(-12deg) translate(1px, 1px); box-shadow: none; } .ds-rbtn-ghost { color: var(--paper, #f1e7cf); background: var(--ink-4, #2b2f35); } .ds-rbtn-ghost:hover:not(:disabled) { background: var(--ink-5, #3b4048); box-shadow: 4px 3px 0 var(--hazard, #f2b705); } .ds-rbtn:disabled { color: rgba(241, 231, 207, 0.35); background: var(--ink-3, #1d2024); cursor: not-allowed; }"
+    },
+    {
+      "name": "Tabs",
+      "kind": "nav",
+      "refersTo": "tab",
+      "description": "Skewed category tabs; active tab is a hazard slab.",
+      "html": "<div class=\"ds-tabs\"><button class=\"ds-tab ds-tab-on\">ALL</button><button class=\"ds-tab\">TOOLS</button><button class=\"ds-tab\">SURVIVAL</button><button class=\"ds-tab\">PARTS</button></div>",
+      "css": ".ds-tabs { display: flex; flex-wrap: wrap; gap: 6px; } .ds-tab { font-family: var(--font-ui, 'Barlow Condensed', sans-serif); font-style: italic; font-weight: 800; font-size: 15px; letter-spacing: 0.06em; color: var(--paper-dim, #b8ae98); background: var(--ink-3, #1d2024); border: 0; padding: 5px 14px 4px; cursor: pointer; transform: skewX(-12deg); transition: color 0.12s ease, background 0.12s ease; } .ds-tab:hover { color: var(--paper, #f1e7cf); background: var(--ink-4, #2b2f35); } .ds-tab:focus-visible { outline: 3px solid var(--hazard, #f2b705); outline-offset: 3px; } .ds-tab-on, .ds-tab-on:hover { color: var(--ink, #0b0b0d); background: var(--hazard, #f2b705); }"
+    },
+    {
+      "name": "Panel with Title Slab",
+      "kind": "card",
+      "refersTo": "panel",
+      "description": "Working surface: panel ink, 4px hazard top rule, 16px cut corners, Bangers title slab on a blood plate.",
+      "html": "<section class=\"ds-panel\"><h2 class=\"ds-ptitle\">BACKPACK</h2><p class=\"ds-hint\">DRAG TO MOVE · SHIFT-CLICK TO SWAP ROWS</p></section>",
+      "css": ".ds-panel { width: 360px; padding: 18px 22px 22px; background: var(--ink-2, #141619); border-top: 4px solid var(--hazard, #f2b705); clip-path: polygon(0 0, calc(100% - 16px) 0, 100% 16px, 100% 100%, 16px 100%, 0 calc(100% - 16px)); } .ds-ptitle { display: inline-block; margin: 0 0 12px; font-family: var(--font-comic, Bangers, Impact, sans-serif); font-weight: normal; font-size: 32px; line-height: 1; letter-spacing: 1.5px; color: var(--ink, #0b0b0d); background: var(--hazard, #f2b705); padding: 6px 18px 3px 14px; transform: skewX(-12deg); box-shadow: 6px 5px 0 var(--blood, #e0302a); } .ds-hint { margin: 0; font-family: var(--font-ui, 'Barlow Condensed', sans-serif); font-weight: 600; font-size: 13px; letter-spacing: 0.06em; color: var(--paper-dim, #b8ae98); }"
+    },
+    {
+      "name": "Paper Tooltip",
+      "kind": "card",
+      "refersTo": "paper-card",
+      "description": "Close-reading surface: paper with an ink plate, 12px bottom-right cut, highlighter-band item name.",
+      "html": "<div class=\"ds-tip\"><span class=\"ds-tip-name\">Rusty Hatchet</span><div class=\"ds-tip-kind\">Tool · Melee</div><span class=\"ds-tip-stat\">12 DMG · 0.8s SWING</span><p>Chops wood. Chops other things.</p></div>",
+      "css": ".ds-tip { max-width: 270px; padding: 12px 16px 14px; background: var(--paper, #f1e7cf); color: var(--ink, #0b0b0d); box-shadow: 6px 6px 0 var(--ink, #0b0b0d), 0 10px 28px rgba(0, 0, 0, 0.5); clip-path: polygon(0 0, 100% 0, 100% calc(100% - 12px), calc(100% - 12px) 100%, 0 100%); } .ds-tip-name { font-family: var(--font-ui, 'Barlow Condensed', sans-serif); font-style: italic; font-weight: 800; font-size: 22px; letter-spacing: 0.02em; line-height: 1.1; background: linear-gradient(transparent 55%, var(--hazard, #f2b705) 55%); padding: 0 3px; } .ds-tip-kind { margin: 6px 0 8px; font-family: var(--font-ui, 'Barlow Condensed', sans-serif); font-weight: 700; font-size: 12px; letter-spacing: 0.12em; text-transform: uppercase; color: #5d5644; } .ds-tip-stat { display: block; font-family: var(--font-ui, 'Barlow Condensed', sans-serif); font-weight: 700; font-size: 15px; color: #2f5a0e; } .ds-tip p { margin: 8px 0 0; font-family: var(--font-body, Barlow, system-ui, sans-serif); font-weight: 500; font-size: 13.5px; line-height: 1.4; }"
+    },
+    {
+      "name": "Inventory Slot",
+      "kind": "custom",
+      "refersTo": "slot",
+      "description": "64px skewed well; selected slot turns hazard, rises 6px and takes a blood plate.",
+      "html": "<div class=\"ds-slots\"><div class=\"ds-slot\"><span class=\"ds-slot-key\">1</span><span class=\"ds-slot-qty\">5</span></div><div class=\"ds-slot ds-slot-on\"><span class=\"ds-slot-key\">2</span><span class=\"ds-slot-qty\">80</span></div><div class=\"ds-slot ds-slot-empty\"></div></div>",
+      "css": ".ds-slots { display: flex; gap: 8px; padding: 12px; } .ds-slot { position: relative; width: 64px; height: 64px; background: var(--well, #343a42); outline: 2px solid var(--ink, #0b0b0d); outline-offset: -2px; transform: skewX(-12deg); box-shadow: 0 10px 28px rgba(0, 0, 0, 0.5); transition: transform 0.15s cubic-bezier(0.16, 1, 0.3, 1), background-color 0.15s ease, outline-color 0.15s ease; } .ds-slot:hover { outline-color: var(--hazard, #f2b705); } .ds-slot-empty { background: rgba(20, 22, 25, 0.72); outline-color: rgba(241, 231, 207, 0.18); } .ds-slot-on { background: var(--hazard, #f2b705); outline-color: var(--ink, #0b0b0d); transform: skewX(-12deg) translateY(-6px); box-shadow: 5px 6px 0 var(--blood, #e0302a), 0 10px 28px rgba(0, 0, 0, 0.5); } .ds-slot-key { position: absolute; left: 0; top: 0; min-width: 17px; padding: 0 4px; font-family: var(--font-ui, 'Barlow Condensed', sans-serif); font-weight: 800; font-size: 13px; line-height: 17px; text-align: center; color: var(--paper, #f1e7cf); background: var(--ink-4, #2b2f35); } .ds-slot-on .ds-slot-key { color: var(--hazard, #f2b705); background: var(--ink, #0b0b0d); } .ds-slot-qty { position: absolute; right: 5px; bottom: 1px; font-family: var(--font-ui, 'Barlow Condensed', sans-serif); font-weight: 800; font-size: 17px; color: var(--paper, #f1e7cf); text-shadow: -1.5px -1.5px 0 #0b0b0d, 1.5px -1.5px 0 #0b0b0d, -1.5px 1.5px 0 #0b0b0d, 1.5px 1.5px 0 #0b0b0d; transform: skewX(12deg); }"
+    },
+    {
+      "name": "Ingredient Chips",
+      "kind": "chip",
+      "refersTo": "chip",
+      "description": "Upright paper count chips; missing turns blood, refund turns toxic.",
+      "html": "<div class=\"ds-chips\"><span class=\"ds-chip\"><i></i>60/4</span><span class=\"ds-chip ds-chip-miss\"><i></i>2/5</span><span class=\"ds-chip ds-chip-refund\"><i></i>+3</span></div>",
+      "css": ".ds-chips { display: flex; gap: 5px; } .ds-chip { display: inline-flex; align-items: center; gap: 4px; padding: 1px 7px 1px 2px; font-family: var(--font-ui, 'Barlow Condensed', sans-serif); font-weight: 700; font-size: 14px; letter-spacing: 0.02em; color: var(--ink, #0b0b0d); background: var(--paper, #f1e7cf); } .ds-chip i { width: 18px; height: 18px; background: var(--well, #343a42); } .ds-chip-miss { color: var(--paper, #f1e7cf); background: var(--blood, #e0302a); } .ds-chip-refund { background: var(--toxic, #8cff3a); }"
+    },
+    {
+      "name": "Raid Timer",
+      "kind": "custom",
+      "refersTo": "raid-timer",
+      "description": "Top-center hazard slab: ink label cell plus 38px italic clock; flips to blood with a hazard plate when imminent.",
+      "html": "<div class=\"ds-raid\"><span class=\"ds-raid-label\">NEXT RAID</span><span class=\"ds-raid-clock\">3:22</span></div> <div class=\"ds-raid ds-raid-hot\"><span class=\"ds-raid-label\">RAID</span><span class=\"ds-raid-clock\">0:09</span></div>",
+      "css": ".ds-raid { display: inline-flex; align-items: stretch; margin: 8px 18px; color: var(--ink, #0b0b0d); background: var(--hazard, #f2b705); box-shadow: 7px 6px 0 var(--blood, #e0302a), 0 10px 28px rgba(0, 0, 0, 0.5); transform: skewX(-12deg); transition: background 0.25s ease; } .ds-raid-label { display: flex; align-items: center; padding: 0 14px 0 16px; font-family: var(--font-ui, 'Barlow Condensed', sans-serif); font-style: italic; font-weight: 800; font-size: 15px; letter-spacing: 0.08em; color: var(--hazard, #f2b705); background: var(--ink, #0b0b0d); } .ds-raid-clock { min-width: 3.4ch; padding: 4px 20px 2px 16px; font-family: var(--font-ui, 'Barlow Condensed', sans-serif); font-style: italic; font-weight: 800; font-size: 38px; line-height: 1; text-align: center; font-variant-numeric: tabular-nums; } .ds-raid-hot { background: var(--blood, #e0302a); color: var(--paper, #f1e7cf); box-shadow: 7px 6px 0 var(--hazard, #f2b705), 0 10px 28px rgba(0, 0, 0, 0.5); } .ds-raid-hot .ds-raid-label { color: var(--paper, #f1e7cf); }"
+    },
+    {
+      "name": "Splash Band",
+      "kind": "custom",
+      "description": "Full-bleed alert band tilted -3deg with ink rules and a solid plate; Bangers title, ink sub slab.",
+      "html": "<div class=\"ds-band\"><div class=\"ds-band-title\">RAID 3</div><div class=\"ds-band-sub\">THEY ARE HERE</div></div>",
+      "css": ".ds-band { position: relative; display: flex; flex-direction: column; align-items: center; gap: 2px; padding: 22px 0 26px; margin: 24px 0; isolation: isolate; } .ds-band::before { content: ''; position: absolute; inset: 0 -4%; background: var(--blood, #e0302a); border-block: 5px solid var(--ink, #0b0b0d); box-shadow: 0 10px 0 var(--ink, #0b0b0d); transform: skewY(-3deg); z-index: -1; } .ds-band-title { font-family: var(--font-comic, Bangers, Impact, sans-serif); font-size: 88px; line-height: 0.9; letter-spacing: 3px; color: var(--paper, #f1e7cf); -webkit-text-stroke: 3px var(--ink, #0b0b0d); paint-order: stroke fill; text-shadow: 6px 6px 0 var(--ink, #0b0b0d); transform: skewY(-3deg); } .ds-band-sub { font-family: var(--font-ui, 'Barlow Condensed', sans-serif); font-style: italic; font-weight: 800; font-size: 24px; letter-spacing: 0.14em; color: var(--paper, #f1e7cf); background: var(--ink, #0b0b0d); padding: 3px 18px 1px; transform: skewY(-3deg) skewX(-12deg); }"
+    }
+  ],
+  "narrative": {
+    "northStar": "The Second Plate",
+    "overview": "The UI is a comic page printed in hazard inks over a grey, fogged world. Every element is a flat slab of solid color leaning forward at the same angle, and anything that needs weight gets a second slab in a different ink knocked out behind it, like a misregistered print plate. There are no gradients on controls, no glass, and no texture under type; loudness comes from saturated flat color, heavy condensed italics, and the offset plate.\n\nDensity follows the moment. The HUD is sparse and anchored to the four screen edges so the world stays visible in the middle; panels (backpack, crafting, gun bench, Codex) are dense, gridded and scannable in seconds; full screens (cover, pause, death) are poster compositions with one giant Bangers word and a short stack of slanted bars. Motion is a slam: things arrive fast from oversize or off-screen and settle without bounce.\n\nThe direction explicitly replaced an incumbent halftone-everywhere comic panel where dots sat behind text. Halftone survives in exactly one place: the blood-red slash edge of the cover and pause screens.",
+    "keyCharacteristics": [
+      "Flat solid slabs on ink black, every one skewed -12deg.",
+      "A hard offset plate (no blur) behind any slab that matters: blood under hazard, ink under paper, blood and toxic.",
+      "Two type voices: Bangers shouts, Barlow Condensed 800 italic informs.",
+      "Paper cream is the reading surface; ink-2 is the working surface.",
+      "Red means danger and only danger.",
+      "Square corners everywhere; panels and paper cards get one 16px cut corner pair."
+    ],
+    "rules": [
+      { "name": "The Second Plate Rule", "body": "A slab that carries a primary value or action gets a solid offset plate in a contrasting ink, offset right and down 4-10px with zero blur. Hazard sits on blood; paper, blood and toxic sit on ink; in alarm states the plate flips to hazard under blood. Resting secondary controls get no plate; the plate appears on hover.", "section": "colors" },
+      { "name": "The Red Is Danger Rule", "body": "Blood red marks danger, damage, loss and low states. It is never decoration on a calm surface, and small red text on ink always uses Blood Text, never full Blood.", "section": "colors" },
+      { "name": "The Paper Is For Reading Rule", "body": "Paper cream surfaces hold things the player reads closely (tooltip, Codex entry, ingredient count, keycap). Working surfaces are Panel Ink. Don't build a whole panel in paper.", "section": "colors" },
+      { "name": "The Two Voices Rule", "body": "Bangers is for the title, full-screen titles, panel title slabs, the boss name, splash bands and sound effects. Every label, number, button and tab is Barlow Condensed. Bangers never sets a number the player has to read mid-fight.", "section": "typography" },
+      { "name": "The Lean Forward Rule", "body": "Values, names and actions are 800 italic; captions that name them are 700 upright. A reader finds the number by its lean.", "section": "typography" },
+      { "name": "The Plate Not Glow Rule", "body": "Weight comes from a solid offset plate, never from a blurred colored glow. The only colored blur in the system is the inset red danger pulse at the screen edge.", "section": "elevation" },
+      { "name": "The Halftone Edge Rule", "body": "Halftone dots (--halftone, 7px grid, 32% black) appear only on the blood slash edge of the cover and pause screens, visible as the strip between the ink panel and the world. Never under text, never on a panel, never in the HUD.", "section": "elevation" }
+    ],
+    "dos": [
+      "Do skew every new slab, chip, tab or button by the shared -12deg (`--skew`) and counter-skew icons and quantities inside it.",
+      "Do give primary values and actions a zero-blur offset plate in a contrasting ink (hazard on blood; paper, blood, toxic on ink).",
+      "Do set every number the player reads in Barlow Condensed 800 italic, and the caption naming it in 700 upright.",
+      "Do put close-reading content on Paper Cream and working surfaces on Panel Ink with a 4px hazard top rule and 16px cut corners.",
+      "Do use the ease-slam curve (`cubic-bezier(0.16, 1, 0.3, 1)`) for entrances and keep every motion collapsible under `prefers-reduced-motion`.",
+      "Do add new colors as `:root` tokens in `src/ui/styles.css`; components reference variables, not hex."
+    ],
+    "donts": [
+      "Don't put halftone dots behind text or on any panel or HUD element; they live only on the cover and pause slash edge.",
+      "Don't use Bangers for labels, buttons, tabs, body copy or live numbers.",
+      "Don't use blood red for anything that isn't danger, damage, loss or a low state.",
+      "Don't round slab corners; the only radii are keycaps (5px) and true circles (minimap, crosshair).",
+      "Don't use a blurred colored glow as the emphasis device; use the plate.",
+      "Don't add small tracked caption lines above titles as kickers; the issue tag carries the run number, not a tagline.",
+      "Don't use text glyphs (arrows, stars, check marks) as icons; draw small marks as CSS polygons or render them from the game's 3D models."
+    ]
+  }
+}

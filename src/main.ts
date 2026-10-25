@@ -1,6 +1,9 @@
 import '@fontsource/bangers/index.css';
-import '@fontsource/inter/400.css';
-import '@fontsource/inter/700.css';
+import '@fontsource/barlow/500.css';
+import '@fontsource/barlow/600.css';
+import '@fontsource/barlow-condensed/600.css';
+import '@fontsource/barlow-condensed/700.css';
+import '@fontsource/barlow-condensed/800-italic.css';
 import './ui/styles.css';
 import { Game } from './game/Game';
 

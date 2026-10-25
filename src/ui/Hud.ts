@@ -3,7 +3,7 @@ import { bossFor, ENEMIES } from '../data/enemies';
 import { el, q } from './dom';
 
 const TOAST_LIFETIME_MS = 3200;
-const MAX_TOASTS = 4;
+const MAX_TOASTS = 3;
 
 /** In-game HUD overlay. Pure view: the game pushes state into it every frame. */
 export class Hud {
@@ -54,19 +54,24 @@ export class Hud {
       <div class="build-tag">AFTERMATH // BUILD 1.0 — LIVING HELL</div>
       <div class="boss-bar"><span class="boss-name"></span><div class="boss-track"><div class="boss-fill"></div></div></div>
       <div class="gas-warning"><span class="gas-icon"></span><span class="gas-text">TOXIC GAS</span></div>
-      <div class="zone-chip" data-state="inside">
-        <span class="zone-icon"></span><span class="zone-text">HOME ZONE</span><span class="zone-dist"></span>
-      </div>
       <div class="raid-timer" data-state="countdown">
         <span class="raid-label">NEXT RAID</span><span class="raid-clock">—</span>
       </div>
+      <div class="zone-chip" data-state="inside">
+        <span class="zone-icon"></span><span class="zone-text">HOME ZONE</span><span class="zone-dist"></span>
+      </div>
       <div class="raid-splash"></div>
       <div class="player-card">
-        <div class="card-name">SURVIVOR</div>
-        <div class="bar bar-health"><div class="bar-fill"></div><span class="bar-label">HEALTH</span><span class="bar-value">100</span></div>
-        <div class="bar short bar-hunger"><div class="bar-fill"></div><span class="bar-label">HUNGER</span><span class="bar-value">100</span></div>
-        <div class="bar short bar-filter"><div class="bar-fill"></div><span class="bar-label">FILTER</span><span class="bar-value">100</span></div>
-        <div class="bar short bar-stamina"><div class="bar-fill"></div><span class="bar-label">STAMINA</span><span class="bar-value">100</span></div>
+        <div class="bar bar-health">
+          <span class="bar-value">100</span>
+          <div class="bar-main">
+            <div class="bar-head"><span class="card-name">SURVIVOR</span><span class="bar-label">HEALTH</span></div>
+            <div class="bar-track"><div class="bar-fill"></div></div>
+          </div>
+        </div>
+        <div class="bar short bar-hunger"><span class="bar-label">HUNGER</span><div class="bar-track"><div class="bar-fill"></div></div><span class="bar-value">100</span></div>
+        <div class="bar short bar-filter"><span class="bar-label">FILTER</span><div class="bar-track"><div class="bar-fill"></div></div><span class="bar-value">100</span></div>
+        <div class="bar short bar-stamina"><span class="bar-label">STAMINA</span><div class="bar-track"><div class="bar-fill"></div></div><span class="bar-value">100</span></div>
       </div>
       <div class="prompt"><span class="key">E</span><span class="prompt-text"></span></div>
       <div class="ammo-chip">
@@ -80,7 +85,7 @@ export class Hud {
       </div>
       <div class="toasts"></div>
       <div class="help">
-        <div class="help-title">FIELD MANUAL</div>
+        <div class="help-tab"><kbd>H</kbd><span>CONTROLS</span></div>
         <div class="help-grid">
           <kbd>WASD</kbd><span>Move</span>
           <kbd>MOUSE</kbd><span>Aim</span>
@@ -98,7 +103,7 @@ export class Hud {
           <kbd>ESC</kbd><span>Pause</span>
           <kbd>M</kbd><span>Mute sound</span>
           <kbd>F1 / \`</kbd><span>Debug panel</span>
-          <kbd>H</kbd><span>Hide manual</span>
+          <kbd>H</kbd><span>Hide controls</span>
         </div>
       </div>
       <div class="crosshair"></div>
@@ -172,6 +177,7 @@ export class Hud {
   setHealth(value: number, max: number): void {
     this.healthBar.style.setProperty('--v', String(Math.max(0, value / max)));
     this.healthValue.textContent = String(Math.ceil(value));
+    this.healthBar.classList.toggle('low', value < max * 0.3);
   }
 
   setStamina(value: number, max: number, exhausted: boolean): void {
@@ -259,7 +265,7 @@ export class Hud {
   }
 
   toggleHelp(): void {
-    this.help.classList.toggle('hidden');
+    this.help.classList.toggle('open');
   }
 
   setAmmo(on: boolean, loaded: number, mag: number, reserve: number, mode: string, jammed: boolean, reload: number): void {

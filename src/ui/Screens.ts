@@ -27,8 +27,9 @@ export class StartScreen {
       : '';
     this.root = el('div', 'screen start-screen');
     this.root.innerHTML = `
+      <div class="cover-watermark" aria-hidden="true">ISSUE ${String(issue).padStart(2, '0')}</div>
       <div class="cover">
-        <div class="cover-issue">ISSUE #${issue} — ${kicker}</div>
+        <div class="cover-issue"><b>#${issue}</b><span>${kicker}</span></div>
         <h1 class="cover-title">AFTERMATH</h1>
         <div class="cover-sub">LIVING HELL</div>
         <p class="cover-tagline">
@@ -36,11 +37,11 @@ export class StartScreen {
           and survive whatever crawls out of the fog.
         </p>
         ${record}
-        <button class="btn" type="button" data-a="start">ENTER THE WASTELAND</button>
-        <div class="cover-row">
+        <nav class="cover-menu">
+          <button class="btn" type="button" data-a="start">ENTER THE WASTELAND</button>
           <button class="btn secondary" type="button" data-a="codex">CODEX</button>
           <button class="btn secondary" type="button" data-a="ledger">THE LEDGER</button>
-        </div>
+        </nav>
       </div>
     `;
     parent.appendChild(this.root);
@@ -97,12 +98,12 @@ export class PauseScreen {
       <div class="pause-panel">
         <div class="pause-title">PAUSED</div>
         <div class="pause-run"></div>
-        <button class="btn" type="button" data-a="resume">RESUME</button>
-        <div class="cover-row">
+        <nav class="cover-menu">
+          <button class="btn" type="button" data-a="resume">RESUME</button>
           <button class="btn secondary" type="button" data-a="codex">CODEX</button>
           <button class="btn secondary" type="button" data-a="ledger">THE LEDGER</button>
-        </div>
-        <button class="btn secondary" type="button" data-a="new">ABANDON RUN</button>
+          <button class="btn secondary danger" type="button" data-a="new">ABANDON RUN</button>
+        </nav>
         <label class="pause-sound">
           <span>SOUND</span>
           <input type="range" min="0" max="100" step="5" aria-label="Volume" />
@@ -144,8 +145,11 @@ export class PauseScreen {
   }
 
   setRun(score: number, best: number, raids: number, seconds: number): void {
-    const pb = best > 0 ? ` · BEST ${formatScore(best)}` : '';
-    this.runEl.innerHTML = `<b>${formatScore(score)}</b><span>${raids} RAIDS · ${formatClock(seconds)}${pb}</span>`;
+    this.runEl.innerHTML = `
+      <div><span>SCORE</span><b>${formatScore(score)}</b></div>
+      <div><span>RAIDS</span><b>${raids}</b></div>
+      <div><span>TIME</span><b>${formatClock(seconds)}</b></div>
+      ${best > 0 ? `<div><span>BEST</span><b>${formatScore(best)}</b></div>` : ''}`;
   }
 }
 
@@ -159,8 +163,10 @@ function deathCover(rec: RecordedRun): string {
       ? `RECORD STILL ${formatScore(rec.previousBest)}`
       : '';
   return `
-    <div class="cover-issue">ISSUE #${r.issue} — THE LAST PAGE</div>
-    <div class="death-title">YOU DIED</div>
+    <div class="death-band">
+      <div class="cover-issue"><b>#${r.issue}</b><span>THE LAST PAGE</span></div>
+      <div class="death-title">YOU DIED</div>
+    </div>
     <div class="death-cause">${escapeHtml(r.cause)}</div>
     <div class="death-score ${rec.newBest ? 'best' : ''}">
       <span>FINAL SCORE</span>
@@ -180,16 +186,16 @@ function deathCover(rec: RecordedRun): string {
     ${killStrip(r)}
     ${gunStrip(r)}
     ${breakdown(r)}
-    <button class="btn" type="button" data-a="new">NEW RUN</button>
-    <div class="cover-row">
+    <nav class="cover-row">
+      <button class="btn" type="button" data-a="new">NEW RUN</button>
       <button class="btn secondary" type="button" data-a="codex">CODEX</button>
       <button class="btn secondary" type="button" data-a="ledger">THE LEDGER</button>
-    </div>
+    </nav>
   `;
 }
 
 function stat(value: string, label: string): string {
-  return `<div><b>${value}</b><span>${label}</span></div>`;
+  return `<div><span>${label}</span><b>${value}</b></div>`;
 }
 
 function killStrip(r: RunRecord): string {
@@ -208,15 +214,16 @@ function gunStrip(r: RunRecord): string {
 function breakdown(r: RunRecord): string {
   const b = r.breakdown;
   const parts = [
-    b.raids && `${formatScore(b.raids)} RAIDS`,
-    b.kills && `${formatScore(b.kills)} KILLS`,
-    b.bosses && `${formatScore(b.bosses)} BOSSES`,
-    b.built && `${formatScore(b.built)} BUILT`,
-    b.guns && `${formatScore(b.guns)} GUNS`,
-    b.time && `${formatScore(b.time)} TIME`,
-  ].filter(Boolean);
-  const mult = b.multiplier > 1 ? `  ×${b.multiplier.toFixed(2)} STREAK` : '';
-  return parts.length ? `<div class="death-math">${parts.join('  +  ')}${mult}</div>` : '';
+    b.raids && ['RAIDS', b.raids],
+    b.kills && ['KILLS', b.kills],
+    b.bosses && ['BOSSES', b.bosses],
+    b.built && ['BUILT', b.built],
+    b.guns && ['GUNS', b.guns],
+    b.time && ['TIME', b.time],
+  ].filter((p): p is [string, number] => !!p);
+  const chips = parts.map(([label, n]) => `<span>${label} <b>+${formatScore(n)}</b></span>`);
+  if (b.multiplier > 1) chips.push(`<span class="streak">STREAK <b>×${b.multiplier.toFixed(2)}</b></span>`);
+  return chips.length ? `<div class="death-math">${chips.join('')}</div>` : '';
 }
 
 function escapeHtml(s: string): string {
