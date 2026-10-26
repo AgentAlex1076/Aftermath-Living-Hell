@@ -96,7 +96,7 @@ export class BuildMode {
     this.ghost = ghost;
     if (p && ghost) {
       ghost.visible = true;
-      ghost.position.set(p.x, 0.01, p.z);
+      ghost.position.set(p.x, this.building.ghostY(p), p.z);
       ghost.rotation.y = p.rot;
       const c = p.ok ? OK_COLOR : BAD_COLOR;
       this.ghostMat.color.copy(c);
@@ -108,14 +108,14 @@ export class BuildMode {
     if (p && structural) {
       const cx = p.cell ? p.cell[0] : Math.floor(p.x / L);
       const cz = p.cell ? p.cell[1] : Math.floor(p.z / L);
-      this.grid.position.set(cx * L + L / 2, 0.035, cz * L + L / 2);
+      this.grid.position.set(cx * L + L / 2, this.building.ghostY(p) + 0.03, cz * L + L / 2);
     }
 
     this.highlight.visible = !!target;
     if (target) {
       this.highlightPulse += dt;
       const pad = 0.12;
-      this.highlight.position.set(target.x, 0, target.z);
+      this.highlight.position.set(target.x, target.y, target.z);
       this.highlight.rotation.y = target.rot;
       this.highlight.scale.set(target.size.w + pad, target.size.h + pad * 0.5, target.size.d + pad);
       (this.highlight.material as THREE.LineBasicMaterial).opacity = 0.65 + 0.35 * Math.sin(this.highlightPulse * 7);

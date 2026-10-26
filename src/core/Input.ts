@@ -17,6 +17,7 @@ export type Action =
   | 'help'
   | 'pause'
   | 'mute'
+  | 'map'
   | 'hotbar1'
   | 'hotbar2'
   | 'hotbar3'
@@ -49,7 +50,8 @@ const KEY_BINDINGS: Record<string, Action> = {
   Backquote: 'debug',
   KeyH: 'help',
   Escape: 'pause',
-  KeyM: 'mute',
+  KeyM: 'map',
+  KeyN: 'mute',
   Digit1: 'hotbar1',
   Digit2: 'hotbar2',
   Digit3: 'hotbar3',
@@ -65,7 +67,11 @@ const MOUSE_BINDINGS: Record<number, Action> = {
 };
 
 /** Actions that should still register while gameplay input is disabled (menus, pause). */
-const ALWAYS_ON: ReadonlySet<Action> = new Set<Action>(['debug', 'pause', 'help', 'inventory', 'mute']);
+const ALWAYS_ON: ReadonlySet<Action> = new Set<Action>(['debug', 'pause', 'help', 'inventory', 'mute', 'map']);
+
+function capturedByUi(e: Event): boolean {
+  return e.target instanceof Element && e.target.closest('[data-ui-capture]') !== null;
+}
 
 /**
  * Keyboard + mouse state. "Pressed" edges are tracked twice: once for the fixed simulation
@@ -80,6 +86,8 @@ export class Input {
   /** Mouse position in CSS pixels. */
   readonly mouseScreen = { x: window.innerWidth / 2, y: window.innerHeight / 2 };
   mouseInWindow = true;
+  /** Pointer is over UI marked `data-ui-capture`, which keeps its own clicks and wheel. */
+  mouseOverUi = false;
 
   private readonly down = new Set<Action>();
   private readonly tickPressed = new Set<Action>();
@@ -224,6 +232,7 @@ export class Input {
       return;
     }
 
+    this.mouseOverUi = capturedByUi(e);
     const rect = this.surface.getBoundingClientRect();
     this.mouseScreen.x = e.clientX;
     this.mouseScreen.y = e.clientY;
@@ -233,6 +242,7 @@ export class Input {
   };
 
   private onMouseDown = (e: MouseEvent): void => {
+    if (capturedByUi(e)) return;
     if (this.pointerLockWanted && !this.pointerLocked && this.enabled && e.button === 0) {
       this.requestPointerLock();
     }
@@ -246,7 +256,7 @@ export class Input {
   };
 
   private onWheel = (e: WheelEvent): void => {
-    if (!this.enabled) return;
+    if (!this.enabled || capturedByUi(e)) return;
     e.preventDefault();
     this.wheel += e.deltaY;
   };

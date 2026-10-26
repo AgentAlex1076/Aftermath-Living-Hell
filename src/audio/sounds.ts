@@ -357,6 +357,12 @@ export function registerSounds(): void {
     noise(s, s.t, 0.03, 0.05, { f0: 2000, q: 1 });
     return 0.08;
   }, { limit: 2, gap: 0.12, gain: 0.7 });
+  audio.register('step.water', (s) => {
+    noise(s, s.t, 0.22, 0.32, { f0: 1500, f1: 520, q: 0.9, attack: 0.02 });
+    noise(s, s.t + 0.04, 0.3, 0.14, { type: 'highpass', f0: 2600, attack: 0.03 });
+    noise(s, s.t, 0.1, 0.2, { type: 'lowpass', f0: 260, q: 0.8 });
+    return 0.36;
+  }, { limit: 2, gap: 0.15, gain: 0.8 });
   audio.register('player.hurt', (s) => {
     const { ctx } = s;
     const lp = ctx.createBiquadFilter();

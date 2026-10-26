@@ -231,6 +231,28 @@ export function buildLampPost(): THREE.Object3D {
   return g;
 }
 
+/** Hand-cranked air-raid siren on a pole. The red lamp is driven by the raid state (`gain`). */
+export function buildSiren(): THREE.Object3D {
+  const g = group('siren');
+  g.add(
+    cyl(0.3, 0.34, 0.22, mat('concrete'), { pos: [0, 0.11, 0], segments: 10 }),
+    cyl(0.06, 0.08, 2.7, mat('metalDark'), { pos: [0, 1.45, 0], segments: 8 }),
+    box(0.17, 0.32, 0.17, mat('hazardYellow'), { pos: [0, 0.5, 0] }),
+    cyl(0.2, 0.2, 0.42, mat('redPaint'), { pos: [0, 2.75, -0.05], rot: [Math.PI / 2, 0, 0], segments: 12 }),
+    cyl(0.3, 0.16, 0.28, mat('redPaint'), { pos: [0, 2.75, 0.3], rot: [Math.PI / 2, 0, 0], segments: 12 }),
+    cyl(0.25, 0.25, 0.04, mat('iron'), { pos: [0, 2.75, 0.45], rot: [Math.PI / 2, 0, 0], segments: 12 }),
+    box(0.22, 0.3, 0.16, mat('metalDark'), { pos: [0, 1.15, 0.1] }),
+    box(0.04, 0.04, 0.3, mat('iron'), { pos: [0.13, 1.2, 0.2] }),
+    box(0.06, 0.16, 0.06, mat('wood'), { pos: [0.13, 1.08, 0.34] }),
+  );
+  const lampMat = uniqueMat('veinGlow');
+  g.add(box(0.14, 0.12, 0.14, lampMat, { pos: [0, 3.05, -0.05], shadow: false }));
+  const lights: LightDesc[] = [{ pos: [0, 3.05, 0.1], color: '#ff2a1a', intensity: 12, distance: 10, style: 'pulse', emissive: lampMat }];
+  g.userData.lights = lights;
+  setColliders(g, [{ kind: 'circle', x: 0, z: 0, r: 0.3 }]);
+  return g;
+}
+
 let barrierGeo: THREE.BufferGeometry | null = null;
 
 export function buildBarrier(): THREE.Object3D {

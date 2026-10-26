@@ -28,9 +28,16 @@ export class Hud {
   private readonly zoneChip: HTMLElement;
   private readonly zoneText: HTMLElement;
   private readonly zoneDist: HTMLElement;
+  private readonly zoneArrow: HTMLElement;
+  private lastZoneState = '';
   private readonly raidChip: HTMLElement;
   private readonly raidLabel: HTMLElement;
   private readonly raidClock: HTMLElement;
+  private readonly raidMeter: HTMLElement;
+  private readonly dayChip: HTMLElement;
+  private readonly dayClock: HTMLElement;
+  private readonly dayNum: HTMLElement;
+  private lastDayKey = '';
   private readonly raidSplash: HTMLElement;
   private readonly dangerPulse: HTMLElement;
   private readonly prompt: HTMLElement;
@@ -39,7 +46,6 @@ export class Hud {
   private readonly help: HTMLElement;
   private readonly crosshair: HTMLElement;
   private lastPrompt = '';
-  private lastZoneInside: boolean | null = null;
   private readonly ammoChip: HTMLElement;
   private lastAmmo = '';
   private readonly bossBar: HTMLElement;
@@ -62,11 +68,16 @@ export class Hud {
       <div class="build-tag">AFTERMATH // BUILD 1.0 — LIVING HELL</div>
       <div class="boss-bar"><span class="boss-name"></span><div class="boss-track"><div class="boss-fill"></div></div></div>
       <div class="gas-warning"><span class="gas-icon"></span><span class="gas-text">TOXIC GAS</span></div>
-      <div class="raid-timer" data-state="countdown">
-        <span class="raid-label">NEXT RAID</span><span class="raid-clock">—</span>
+      <div class="raid-timer" data-state="calm">
+        <span class="raid-label">HORDE</span>
+        <span class="raid-meter"><span class="raid-meter-fill"></span></span>
+        <span class="raid-clock">0%</span>
+      </div>
+      <div class="day-chip" data-phase="day">
+        <span class="day-icon"></span><span class="day-clock">07:30</span><span class="day-num">DAY 1</span>
       </div>
       <div class="zone-chip" data-state="inside">
-        <span class="zone-icon"></span><span class="zone-text">HOME ZONE</span><span class="zone-dist"></span>
+        <span class="zone-icon"></span><span class="zone-text">HOME ZONE</span><span class="zone-dist"></span><span class="zone-arrow"></span>
       </div>
       <div class="raid-splash"></div>
       <div class="player-card">
@@ -109,7 +120,8 @@ export class Hud {
           <kbd>HAMMER</kbd><span>LMB fix · R upgrade · hold X scrap</span>
           <kbd>WHEEL</kbd><span>Zoom</span>
           <kbd>ESC</kbd><span>Pause</span>
-          <kbd>M</kbd><span>Mute sound</span>
+          <kbd>M</kbd><span>Map</span>
+          <kbd>N</kbd><span>Mute sound</span>
           <kbd>F1 / \`</kbd><span>Debug panel</span>
           <kbd>H</kbd><span>Hide controls</span>
         </div>
@@ -134,9 +146,14 @@ export class Hud {
     this.zoneChip = q(this.root, '.zone-chip');
     this.zoneText = q(this.root, '.zone-text');
     this.zoneDist = q(this.root, '.zone-dist');
+    this.zoneArrow = q(this.root, '.zone-arrow');
     this.raidChip = q(this.root, '.raid-timer');
     this.raidLabel = q(this.root, '.raid-label');
     this.raidClock = q(this.root, '.raid-clock');
+    this.raidMeter = q(this.root, '.raid-meter-fill');
+    this.dayChip = q(this.root, '.day-chip');
+    this.dayClock = q(this.root, '.day-clock');
+    this.dayNum = q(this.root, '.day-num');
     this.raidSplash = q(this.root, '.raid-splash');
     this.dangerPulse = q(this.root, '.danger-pulse');
     this.prompt = q(this.root, '.prompt');
@@ -150,21 +167,48 @@ export class Hud {
     this.bossFill = q(this.root, '.boss-fill');
 
     events.on('toast', ({ text, tone }) => this.toast(text, tone));
-    events.on('raid:warning', ({ seconds }) => this.splash(
+    events.on('raid:warning', ({ seconds, away }) => this.splash(
       seconds >= 60 ? '1 MINUTE' : `${seconds}`,
-      seconds >= 60 ? 'GET HOME' : seconds >= 30 ? "THEY'RE CLOSE" : 'HOLD THE HUT',
+      away ? 'GET HOME' : seconds >= 60 ? 'GET READY' : seconds >= 30 ? "THEY'RE CLOSE" : 'HOLD THE HUT',
+      away ? 'danger' : 'warn',
+    ));
+    events.on('horde:stir', ({ level }) => this.splash(
+      level >= 75 ? "THEY'RE GATHERING" : 'THE HORDE STIRS',
+      `ATTENTION ${level}%`,
+      level >= 75 ? 'danger' : 'warn',
+    ));
+    events.on('raid:calling', ({ seconds, night }) => this.splash(
+      'SIREN',
+      `${night ? 'NIGHT RAID' : 'THEY HEARD IT'} — ${seconds} SECONDS`,
       'warn',
     ));
+    events.on('raid:inbound', ({ seconds }) => {
+      const mins = Math.round(seconds / 60);
+      this.splash('HORDE INBOUND', `GET HOME — ${seconds >= 60 ? `${mins} MINUTE${mins > 1 ? 'S' : ''}` : `${Math.round(seconds)} SECONDS`}`, 'danger');
+    });
+    events.on('raid:siege', ({ raid, reason }) => {
+      this.splash(`RAID ${raid}`, 'THE BASE IS ON ITS OWN', 'danger');
+      this.toast(reason === 'left'
+        ? 'You walked away. The walls and turrets will have to hold.'
+        : "You weren't home. The horde hit the base without you. Get back there.", 'danger');
+    });
+    events.on('raid:engage', ({ left }) => this.splash('BACK IN IT', `${left} STILL AT THE WALLS`, 'danger'));
     events.on('raid:start', ({ raid }) => {
       const boss = bossFor(raid);
       this.splash(`RAID ${raid}`, boss ? ENEMIES[boss.id].title : 'THEY ARE HERE', 'danger');
     });
-    events.on('raid:end', ({ raid }) => this.splash('CLEAR', `RAID ${raid} OVER`, 'info'));
-    events.on('raid:penalty', ({ reason }) => this.splash(
-      'CAUGHT OUTSIDE',
-      reason === 'timer' ? 'GEAR WIPED' : 'GET BACK',
-      'danger',
-    ));
+    events.on('raid:end', ({ raid, result, points }) => {
+      if (result === 'breached') {
+        this.splash('BREACHED', `RAID ${raid} GOT IN`, 'danger');
+        this.toast('They broke through and ransacked the storage on that side. It does not count.', 'danger');
+        return;
+      }
+      this.splash(result === 'held' ? 'HELD' : 'CLEAR', `RAID ${raid} OVER · +${points.toLocaleString('en-US')}`, 'info');
+    });
+    events.on('raid:reward', ({ entries }) => {
+      const cache = entries.find((e) => e.kind === 'cache');
+      if (cache && cache.kind === 'cache' && cache.items.length) this.toast('The horde left something behind. Salvage cache by the hut.', 'info');
+    });
   }
 
   setVisible(visible: boolean): void {
@@ -234,30 +278,63 @@ export class Hud {
   }
 
   /** `gas` is the local intensity; `filterEmpty` switches the warning to "choking". */
-  setGas(gas: number, filterEmpty: boolean): void {
+  /** `water`: the exposure is poisoned water around the legs, not gas in the air. */
+  setGas(gas: number, filterEmpty: boolean, water = false): void {
     this.gasOverlay.style.opacity = String(Math.min(1, gas) * (filterEmpty ? 0.9 : 0.35));
     const state = gas < 0.05 ? 'off' : filterEmpty ? 'choking' : 'on';
-    if (state === this.lastGasState) return;
-    this.lastGasState = state;
+    const key = `${state}${water}`;
+    if (key === this.lastGasState) return;
+    this.lastGasState = key;
     this.gasWarning.dataset.state = state;
-    this.gasText.textContent = state === 'choking' ? 'FILTER EMPTY — CHOKING' : 'TOXIC GAS — FILTER DRAINING';
+    this.gasText.textContent = state === 'choking' ? 'FILTER EMPTY — CHOKING' : water ? 'TOXIC WATER — FILTER DRAINING' : 'TOXIC GAS — FILTER DRAINING';
   }
 
-  setZone(inside: boolean, metersOutside: number): void {
-    if (inside !== this.lastZoneInside) {
-      this.lastZoneInside = inside;
-      this.zoneChip.dataset.state = inside ? 'inside' : 'outside';
-      this.zoneText.textContent = inside ? 'HOME ZONE' : 'OUTSIDE HOME ZONE';
-      this.dangerPulse.classList.toggle('on', !inside);
+  /**
+   * Home Zone chip. Away from home it shows the distance and an arrow pointing home (`homeAngle`,
+   * radians clockwise from screen-up). `urgent` (a raid coming or on) turns it red and pulses the edges.
+   */
+  setZone(inside: boolean, metersOutside: number, homeAngle: number, urgent: boolean): void {
+    const state = inside ? 'inside' : urgent ? 'urgent' : 'away';
+    if (state !== this.lastZoneState) {
+      this.lastZoneState = state;
+      this.zoneChip.dataset.state = state;
+      this.zoneText.textContent = inside ? 'HOME ZONE' : urgent ? 'GET HOME' : 'AWAY FROM HOME';
+      this.dangerPulse.classList.toggle('on', state === 'urgent');
     }
-    this.zoneDist.textContent = inside ? '' : `+${Math.ceil(metersOutside)}M`;
+    this.zoneDist.textContent = inside ? '' : `${Math.ceil(metersOutside)}M`;
+    if (!inside) this.zoneArrow.style.transform = `rotate(${homeAngle.toFixed(3)}rad)`;
   }
 
-  setRaid(active: boolean, timeLeft: number, raidNumber: number, remaining: number): void {
-    const state = active ? 'raid' : timeLeft <= 10 ? 'imminent' : timeLeft <= 30 ? 'soon' : 'countdown';
-    this.raidChip.dataset.state = state;
-    this.raidLabel.textContent = active ? `RAID ${Math.max(1, raidNumber)}` : 'NEXT RAID';
-    this.raidClock.textContent = active ? `${remaining} LEFT` : formatClock(timeLeft);
+  /** Horde meter while calm; a countdown during the siren wind-up or a forced raid; mutants left in a raid. */
+  setRaid(raid: { state: 'calm' | 'calling' | 'inbound' | 'raid' | 'siege'; attention: number; timeLeft: number; raidNumber: number; remaining: number }): void {
+    const { state, attention, timeLeft } = raid;
+    let view: string;
+    if (state === 'raid' || state === 'siege') view = 'raid';
+    else if (state === 'calling') view = 'calling';
+    else if (state === 'inbound') view = timeLeft <= 10 ? 'imminent' : 'inbound';
+    else view = attention >= 75 ? 'gathering' : attention >= 50 ? 'stirring' : 'calm';
+    this.raidChip.dataset.state = view;
+    this.raidLabel.textContent =
+      state === 'raid' ? `RAID ${Math.max(1, raid.raidNumber)}`
+      : state === 'siege' ? 'BASE UNDER ATTACK'
+      : state === 'calling' ? 'SIREN'
+      : state === 'inbound' ? 'HORDE INBOUND'
+      : 'HORDE';
+    this.raidClock.textContent =
+      state === 'raid' || state === 'siege' ? `${raid.remaining} LEFT`
+      : state === 'calm' ? `${Math.floor(attention)}%`
+      : formatClock(timeLeft);
+    this.raidMeter.style.transform = `scaleX(${(state === 'calm' ? attention / 100 : 1).toFixed(3)})`;
+  }
+
+  /** Time of day, top left. */
+  setDay(clock: string, day: number, phase: string): void {
+    const key = `${clock}|${day}|${phase}`;
+    if (key === this.lastDayKey) return;
+    this.lastDayKey = key;
+    this.dayChip.dataset.phase = phase;
+    this.dayClock.textContent = clock;
+    this.dayNum.textContent = `DAY ${day}`;
   }
 
   private splash(title: string, sub: string, tone: ToastTone): void {

@@ -5,8 +5,10 @@ import type { Input } from '../core/Input';
 import { dampAngle, dampFactor } from '../core/math';
 import type { CameraRig } from '../render/CameraRig';
 import type { CollisionWorld } from '../physics/Collision';
+import type { HeightField } from '../world/Height';
+import { endPoint, pointAlong, type LinkEnd, type TraversalLink } from '../world/Traversal';
 
-export type PlayerState = 'normal' | 'dodging';
+export type PlayerState = 'normal' | 'dodging' | 'climbing';
 
 /** Fraction of a swing at which the hit lands. */
 export const SWING_IMPACT = 0.45;
@@ -35,6 +37,14 @@ export class Player {
   stamina: number = CONFIG.player.stamina.max;
   exhausted = false;
   sprinting = false;
+  /** Ground slope underfoot, degrees. Debug and the HUD can read it. */
+  slope = 0;
+  /** Water depth while wading through a ford (0 on dry ground). */
+  wade = 0;
+  /** The traversal link being followed, how far along it, and which way. */
+  link: TraversalLink | null = null;
+  linkS = 0;
+  linkDir = 1;
   infiniteStamina = false;
   godMode = false;
 
@@ -102,10 +112,30 @@ export class Player {
     this.health = Math.min(CONFIG.player.maxHealth, this.health + amount);
   }
 
-  teleport(x: number, z: number): void {
-    this.position.set(x, 0, z);
+  teleport(x: number, z: number, y = 0): void {
+    this.position.set(x, y, z);
     this.prevPosition.copy(this.position);
     this.velocity.set(0, 0, 0);
+    if (this.state === 'climbing') this.state = 'normal';
+    this.link = null;
+  }
+
+  /** Gets on a traversal link at `end` and follows it to the other one. False if busy. */
+  startClimb(link: TraversalLink, end: LinkEnd): boolean {
+    if (this.state !== 'normal') return false;
+    this.state = 'climbing';
+    this.link = link;
+    this.linkDir = end === 0 ? 1 : -1;
+    this.linkS = end === 0 ? 0 : link.length;
+    this.swinging = false;
+    this.sprinting = false;
+    this.velocity.set(0, 0, 0);
+    this.position.copy(endPoint(link, end));
+    return true;
+  }
+
+  get climbProgress(): number {
+    return this.link ? this.linkS / this.link.length : 0;
   }
 
   setAim(point: THREE.Vector3 | null): void {
@@ -113,7 +143,7 @@ export class Player {
     if (point) this.aimPoint.copy(point);
   }
 
-  update(dt: number, input: Input, cam: CameraRig, world: CollisionWorld): void {
+  update(dt: number, input: Input, cam: CameraRig, world: CollisionWorld, height: HeightField): void {
     const cfg = CONFIG.player;
     this.prevPosition.copy(this.position);
     this.prevFacing = this.facing;
@@ -152,11 +182,18 @@ export class Player {
       }
     }
 
+    if (this.state === 'climbing') {
+      this.updateClimb(dt);
+      this.updateStamina(dt);
+      this.actualVelocity.subVectors(this.position, this.prevPosition).divideScalar(dt);
+      return;
+    }
+
     if (this.state === 'normal') {
       if (input.wasPressed('dodge') && this.dodgeCooldown <= 0 && this.spendStamina(cfg.dodge.staminaCost)) {
         this.startDodge(moving ? _wish : null);
       } else {
-        this.updateLocomotion(dt, input, moving);
+        this.updateLocomotion(dt, input, moving, height);
       }
     }
 
@@ -164,10 +201,31 @@ export class Player {
 
     this.position.addScaledVector(this.velocity, dt);
     world.resolveCircle(this.position, cfg.radius);
+    const walk = height.walk(this.position.x, this.position.z);
+    if (walk.mul <= 0 && height.walk(this.prevPosition.x, this.prevPosition.z).mul > 0) {
+      this.position.x = this.prevPosition.x;
+      this.position.z = this.prevPosition.z;
+    }
+    this.position.y = height.at(this.position.x, this.position.z);
+    this.slope = height.slopeDeg(this.position.x, this.position.z);
+    this.wade = walk.wade;
     this.actualVelocity.subVectors(this.position, this.prevPosition).divideScalar(dt);
   }
 
-  private updateLocomotion(dt: number, input: Input, moving: boolean): void {
+  private updateClimb(dt: number): void {
+    const link = this.link!;
+    this.linkS += this.linkDir * CONFIG.traversal.climbSpeed * dt;
+    this.facing = dampAngle(this.facing, link.yaw, 14, dt);
+    this.wade = 0;
+    const done = this.linkDir > 0 ? this.linkS >= link.length : this.linkS <= 0;
+    pointAlong(link, this.linkS, this.position);
+    if (!done) return;
+    this.state = 'normal';
+    this.link = null;
+    this.position.copy(endPoint(link, this.linkDir > 0 ? 1 : 0));
+  }
+
+  private updateLocomotion(dt: number, input: Input, moving: boolean, height: HeightField): void {
     const cfg = CONFIG.player;
 
     if (this.hasAim) {
@@ -178,8 +236,10 @@ export class Player {
     }
 
     this.kick = Math.max(0, this.kick - dt * 4);
-    this.sprinting = moving && !this.swinging && !this.aiming && input.isDown('sprint') && !this.exhausted && this.stamina > 0;
+    const walk = height.walk(this.position.x, this.position.z);
+    this.sprinting = moving && !this.swinging && !this.aiming && walk.sprint && input.isDown('sprint') && !this.exhausted && this.stamina > 0;
     let speed = this.sprinting ? cfg.sprintSpeed : cfg.walkSpeed;
+    speed *= walk.mul;
     if (this.swinging) speed *= cfg.swingMoveMultiplier;
     if (this.load > 0) speed *= CONFIG.guns.weightSoft / (CONFIG.guns.weightSoft + this.load);
     if (this.aiming) speed *= CONFIG.combat.aimMove;

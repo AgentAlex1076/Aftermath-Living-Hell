@@ -187,7 +187,7 @@ export class PauseScreen {
           <span>SOUND</span>
           <input type="range" min="0" max="100" step="5" aria-label="Volume" />
           <button class="btn secondary" type="button" data-a="mute">MUTE</button>
-          <em>M</em>
+          <em>N</em>
         </label>
         <div class="pause-seed">WORLD SEED #${seed}</div>
       </div>

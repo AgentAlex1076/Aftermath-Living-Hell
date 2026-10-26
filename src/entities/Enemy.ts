@@ -3,6 +3,7 @@ import { clamp, damp, dampAngle } from '../core/math';
 import type { EnemyDef } from '../data/enemies';
 import { models } from '../models/ModelRegistry';
 import { mergeStatic } from '../models/merge';
+import type { TraversalLink } from '../world/Traversal';
 
 export type EnemyState = 'idle' | 'walk' | 'attack' | 'dead';
 /** What the current attack does when it lands. */
@@ -45,7 +46,14 @@ export class Enemy {
   calls = 0;
   broodStage = 0;
   voiceT = 0;
+  /** Seconds left walking toward a noise it heard (roamers only). */
+  alertT = 0;
+  readonly alertAt = new THREE.Vector2();
   readonly wish = new THREE.Vector2();
+  /** A traversal link it is following, how far along, and which way. */
+  link: TraversalLink | null = null;
+  linkS = 0;
+  linkDir = 1;
   private readonly nodes: Record<string, THREE.Object3D>;
   private readonly cloakMats: THREE.MeshStandardMaterial[] = [];
   private phase = 0;
@@ -78,8 +86,8 @@ export class Enemy {
     return this.buffT > 0;
   }
 
-  spawn(x: number, z: number, raid: boolean, hpMul = 1): void {
-    this.position.set(x, 0, z);
+  spawn(x: number, z: number, raid: boolean, hpMul = 1, y = 0): void {
+    this.position.set(x, y, z);
     this.facing = Math.atan2(-x, -z);
     this.maxHp = this.def.hp * hpMul;
     this.hp = this.maxHp;
@@ -100,10 +108,12 @@ export class Enemy {
     this.calls = 0;
     this.broodStage = 0;
     this.voiceT = 2 + Math.random() * 6;
+    this.alertT = 0;
     this.wish.set(0, 0);
+    this.link = null;
     this.setOpacity(1);
     this.object.visible = true;
-    this.object.position.set(x, 0, z);
+    this.object.position.set(x, y, z);
     this.object.rotation.set(0, this.facing, 0);
     this.object.scale.setScalar(1);
   }
@@ -145,7 +155,7 @@ export class Enemy {
   animate(dt: number): void {
     const n = this.nodes;
     const d = this.def;
-    this.object.position.set(this.position.x, this.lift, this.position.z);
+    this.object.position.set(this.position.x, this.position.y + this.lift, this.position.z);
     this.object.rotation.y = this.facing;
 
     if (this.state === 'dead') {
@@ -154,7 +164,7 @@ export class Enemy {
       const ease = t * t;
       this.lift = Math.max(0, this.lift - dt * 9);
       this.object.rotation.z = ease * (this.crawl ? 0.4 : 1.35);
-      this.object.position.y = this.lift - ease * 0.35;
+      this.object.position.y = this.position.y + this.lift - ease * 0.35;
       this.object.scale.setScalar(1 - ease * 0.15);
       return;
     }
@@ -195,12 +205,12 @@ export class Enemy {
           arm = -1.6 * strike;
           if (n.hips) n.hips.rotation.x += strike * 0.35;
       }
-    } else if (this.lift > 0.15) {
+    } else if (this.lift > 0.15 || this.link) {
       arm = -2.4 + Math.sin(this.phase * 2) * 0.4;
     }
 
     const attacking = this.state === 'attack';
-    const both = attacking ? this.attackKind !== 'melee' : this.lift > 0.15;
+    const both = attacking ? this.attackKind !== 'melee' : this.lift > 0.15 || !!this.link;
     const armR = both ? arm : -arm - (attacking ? 0.8 : 0);
     if (n.armL) n.armL.rotation.set(arm, 0, this.crawl ? 0.4 : -0.15);
     if (n.armR) n.armR.rotation.set(armR, 0, this.crawl ? -0.4 : 0.15);

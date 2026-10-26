@@ -200,9 +200,9 @@ export class CollisionWorld {
     return hit;
   }
 
-  createDebugMesh(): THREE.LineSegments {
+  createDebugMesh(heightAt?: (x: number, z: number) => number): THREE.LineSegments {
     const pts: number[] = [];
-    const y = 0.06;
+    const yOf = (x: number, z: number) => (heightAt?.(x, z) ?? 0) + 0.06;
     for (const c of this.all) {
       if (c.kind === 'box') {
         const corners = [
@@ -214,15 +214,15 @@ export class CollisionWorld {
         for (let i = 0; i < 4; i++) {
           const a = corners[i];
           const b = corners[(i + 1) % 4];
-          pts.push(a[0], y, a[1], b[0], y, b[1]);
+          pts.push(a[0], yOf(a[0], a[1]), a[1], b[0], yOf(b[0], b[1]), b[1]);
         }
       } else {
         const seg = 20;
         for (let i = 0; i < seg; i++) {
           const a0 = (i / seg) * Math.PI * 2;
           const a1 = ((i + 1) / seg) * Math.PI * 2;
-          pts.push(c.x + Math.cos(a0) * c.r, y, c.z + Math.sin(a0) * c.r);
-          pts.push(c.x + Math.cos(a1) * c.r, y, c.z + Math.sin(a1) * c.r);
+          pts.push(c.x + Math.cos(a0) * c.r, yOf(c.x, c.z), c.z + Math.sin(a0) * c.r);
+          pts.push(c.x + Math.cos(a1) * c.r, yOf(c.x, c.z), c.z + Math.sin(a1) * c.r);
         }
       }
     }

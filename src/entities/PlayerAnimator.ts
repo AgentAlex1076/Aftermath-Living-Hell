@@ -49,6 +49,7 @@ export class PlayerAnimator {
   private held: THREE.Object3D | null = null;
   private heldKind: 'none' | 'tool' | 'gun' = 'none';
   private gunBlend = 0;
+  private climbPhase = 0;
 
   constructor(root: THREE.Object3D) {
     const names = ['rollPivot', 'body', 'hips', 'head', 'armL', 'armR', 'forearmL', 'forearmR', 'handR', 'legL', 'legR', 'shinL', 'shinR'];
@@ -138,6 +139,24 @@ export class PlayerAnimator {
     n.forearmR.rotation.x = _pose.foreRx;
 
     this.updateRoll(player, facing);
+    if (player.state === 'climbing') this.applyClimb(dt, player.linkDir);
+  }
+
+  /** Hand over hand up (or down) the rungs. */
+  private applyClimb(dt: number, dir: number): void {
+    const n = this.n;
+    this.climbPhase += dt * 7 * dir;
+    const s = Math.sin(this.climbPhase);
+    n.armL.rotation.set(-2.45 + s * 0.35, 0, 0.12);
+    n.armR.rotation.set(-2.45 - s * 0.35, 0, -0.12);
+    n.forearmL.rotation.x = -0.45 - Math.max(0, s) * 0.5;
+    n.forearmR.rotation.x = -0.45 - Math.max(0, -s) * 0.5;
+    n.legL.rotation.set(-0.55 - s * 0.45, 0, 0);
+    n.legR.rotation.set(-0.55 + s * 0.45, 0, 0);
+    n.shinL.rotation.x = 0.85 + s * 0.4;
+    n.shinR.rotation.x = 0.85 - s * 0.4;
+    n.hips.rotation.set(0.1, 0, 0);
+    n.head.rotation.set(-0.25, 0, 0);
   }
 
   private updateRoll(player: Player, facing: number): void {

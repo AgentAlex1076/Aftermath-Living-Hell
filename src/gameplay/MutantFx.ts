@@ -31,6 +31,7 @@ interface Mark {
   active: boolean;
 }
 
+const _up = new THREE.Vector3();
 const GLOBS = 16;
 const SPLATS = 14;
 const RINGS = 6;
@@ -52,6 +53,7 @@ export class MutantFx {
     private readonly debris: Debris,
     private readonly floaters: FloatingText,
     private readonly onAcid: () => void,
+    private readonly heightAt: (x: number, z: number) => number = () => 0,
   ) {
     for (let i = 0; i < GLOBS; i++) {
       const mesh = new THREE.Mesh(globGeo, this.globMat);
@@ -79,7 +81,8 @@ export class MutantFx {
   ring(x: number, z: number, radius: number, color: string, life = 0.55): void {
     const r = this.rings.find((o) => !o.active) ?? this.rings[0];
     (r.mesh.material as THREE.MeshBasicMaterial).color.set(color);
-    r.mesh.position.set(x, 0.06, z);
+    r.mesh.position.set(x, this.heightAt(x, z) + 0.06, z);
+    this.lieOnGround(r.mesh, x, z);
     r.grow = radius;
     r.life = r.maxLife = life;
     r.active = true;
@@ -120,11 +123,13 @@ export class MutantFx {
     g.active = false;
     g.mesh.visible = false;
     const { tx, tz, spec } = g;
-    this.debris.burst(tx, 0.3, tz, '#b6ff4a', 12);
-    this.floaters.spawn(new THREE.Vector3(tx, 1.1, tz), 'HSSSS!', 'word', '#b6ff4a');
+    const gy = this.heightAt(tx, tz);
+    this.debris.burst(tx, gy + 0.3, tz, '#b6ff4a', 12);
+    this.floaters.spawn(new THREE.Vector3(tx, gy + 1.1, tz), 'HSSSS!', 'word', '#b6ff4a');
     sfx('acid', { x: tx, z: tz });
     const s = this.splats.find((o) => !o.active) ?? this.splats[0];
-    s.mesh.position.set(tx, 0.035, tz);
+    s.mesh.position.set(tx, gy + 0.05, tz);
+    this.lieOnGround(s.mesh, tx, tz);
     s.mesh.scale.setScalar(spec.splash * (0.9 + Math.random() * 0.3));
     s.life = s.maxLife = 3.2;
     s.active = true;
@@ -140,6 +145,13 @@ export class MutantFx {
     }
     const piece = this.building.pieceNear(tx, tz, spec.splash);
     if (piece) this.building.damage(piece, spec.structureDamage);
+  }
+
+  /** Tilts a flat ground mark to the slope under it. */
+  private lieOnGround(mesh: THREE.Mesh, x: number, z: number): void {
+    const h = this.heightAt;
+    _up.set(h(x - 1, z) - h(x + 1, z), 2, h(x, z - 1) - h(x, z + 1)).normalize();
+    mesh.quaternion.setFromUnitVectors(THREE.Object3D.DEFAULT_UP, _up);
   }
 
   private mark(scene: THREE.Scene, geo: THREE.BufferGeometry, color: string, opacity: number): Mark {

@@ -3,15 +3,53 @@ export const CONFIG = {
   maxFrameTime: 0.25,
 
   world: {
-    /** Half the side length of the playable square, centered on the hut. */
-    halfSize: 192,
     chunkSize: 32,
     loadRadius: 2,
     unloadRadius: 3,
+    /** Ground tiles stream one chunk wider than content, so loaded props never sit at a bare edge. */
+    groundRadius: 3,
+    /** Chunk layouts farther than this (in chunks) are dropped; they regenerate from the seed. */
+    planKeepRadius: 6,
+    /** Threat reaches 100% this far from the hut, then keeps climbing with no cap. */
+    threatFull: 182,
+    /** Extra threat per metre past `threatFull` (another 100% every 400 m). */
+    threatPerMetre: 1 / 400,
     /** No generated content this close to the hut (the hand-built starter yard lives here). */
     starterClearRadius: 15,
+    /** The home road runs east–west through the yard at this z; highways are this wide. */
     roadZ: 16,
     roadWidth: 7,
+    streetWidth: 5.5,
+    /**
+     * Height field. `heightScale` 0 is flat (the Phase 13 look); 1 is the full overhaul.
+     * Layers and slope rules live in `Height.ts`.
+     */
+    heightScale: 1,
+    homeSearch: 180,
+    homeFlatten: 30,
+    homeBlend: 16,
+    walkSlope: 30,
+    steepSlope: 45,
+    steepMul: 0.6,
+    roadMul: 1.1,
+    /** Extra flow-field cost per metre climbed. */
+    climbCost: 0.75,
+    /**
+     * Water. Deeper than `deepWater` blocks (merged colliders, like cliffs); shallower than that but
+     * past `wadeDepth` is a ford: `wadeMul` speed, no sprint, and loud. Rivers stay this far from the hut.
+     */
+    deepWater: 0.95,
+    wadeDepth: 0.12,
+    wadeMul: 0.6,
+    riverHome: [100, 140] as const,
+  },
+
+  traversal: {
+    /** Metres per second along a traversal link. */
+    climbSpeed: 2.3,
+    mutantClimbSpeed: 1.5,
+    /** A mutant this far from a link end will go for it to reach a player on the other level. */
+    mutantSeek: 10,
   },
 
   player: {
@@ -75,6 +113,8 @@ export const CONFIG = {
     filterDrain: 3,
     /** Health lost per second in gas with an empty filter. */
     damageNoFilter: 9,
+    /** Standing in Marsh or crater water counts as gas this strong (more as it gets deeper). */
+    toxicWater: 0.6,
   },
 
   inventory: {
@@ -93,7 +133,7 @@ export const CONFIG = {
     pitchDeg: 54,
     distance: 20,
     minDistance: 12,
-    maxDistance: 38,
+    maxDistance: 46,
     zoomStep: 0.0025,
     followSharpness: 7,
     zoomSharpness: 10,
@@ -106,10 +146,73 @@ export const CONFIG = {
     radius: 30,
   },
 
-  raid: {
-    minCountdown: 90,
-    maxCountdown: 300,
+  /** One real second is one game minute; the cycle starts at 05:00 (first light). */
+  dayNight: {
+    cycle: 1440,
+    dawn: 120,
+    day: 840,
+    dusk: 120,
+    /** Seconds into the cycle when a run begins (07:30). */
+    start: 150,
+  },
+
+  horde: {
+    /** Attention (0–100) per second in daylight at the start of a run: about 14 minutes to fill. */
+    passive: 0.12,
+    /** Extra passive gain per raid survived, as a fraction of `passive`. */
+    passivePerRaid: 0.06,
+    nightMultiplier: 2,
+    /** After a raid, attention restarts at this much per raid survived, up to `maxFloor`. */
+    floorPerRaid: 2.5,
+    maxFloor: 35,
+    thresholds: [50, 75] as const,
+    callWindup: 15,
+    callCooldown: 60,
+    /** Wave and reward scale when the siren is cranked at 0% and at 100% attention. */
+    callScaleMin: 0.75,
+    callScaleMax: 1.5,
+    nightWave: 1.25,
+    nightReward: 1.35,
+    /** Return window before a forced raid at 100% attention. */
+    forcedWarning: 120,
+    forcedWarningNight: 90,
     warnings: [60, 30, 10] as const,
+    /** Farther than this from the hut when a raid lands (or comes back within it): the base fights without you. */
+    siegeRange: 60,
+    /** Walk this far from the hut during a raid and the rest of it is fought without you. */
+    leaveRange: 75,
+    /** A siege that hasn't broken through after this long gives up: the base held. */
+    siegeMaxTime: 180,
+    /** Seconds from the wave appearing to it reaching the outer walls. */
+    siegeApproach: 8,
+    /** How many mutants at the front of a siege wave can hit the walls at once. */
+    siegeFront: 6,
+    /** Fraction of each stack lost from storage boxes behind a breached side. */
+    breachLoss: [0.3, 0.6] as const,
+    /** A held siege pays this fraction of the score and cache. */
+    heldShare: 0.5,
+    /** Map landmarks revealed per cleared raid (landmarks arrive in Phase 17). */
+    reveals: [1, 2] as const,
+    /** Attention added by noise. Gunshots scale from `shot` to `shotHeavy` with how heavy the gun hits. */
+    noise: {
+      shot: 0.15,
+      shotHeavy: 0.55,
+      turret: 0.12,
+      explosion: 1.6,
+      generator: 0.06,
+      pry: 0.8,
+      labLocker: 2.5,
+      /** Per splashing stride through a ford. */
+      wade: 0.04,
+    },
+    /** Roamers this close to a noise walk over to investigate. */
+    hearing: { shot: 32, explosion: 45, generator: 18, pry: 16, wade: 14 },
+    investigateTime: 14,
+    roamCountNight: 6,
+    nightAggro: 1.6,
+  },
+
+  raid: {
     /** Ring outside the Home Zone where the wave appears. */
     spawnMin: 38,
     spawnMax: 46,

@@ -8,6 +8,8 @@ export interface Interactable {
   radius: number;
   /** When false, the interactable is skipped (e.g. an already-searched crate). */
   enabled?: boolean;
+  /** Only reachable from within this much height (a link's top end is not in reach from its foot). */
+  maxDy?: number;
   onInteract: () => void;
 }
 
@@ -31,6 +33,7 @@ export class InteractionSystem {
     let bestScore = Infinity;
     for (const item of this.items) {
       if (item.enabled === false) continue;
+      if (item.maxDy !== undefined && Math.abs(item.position.y - pos.y) > item.maxDy) continue;
       const dx = item.position.x - pos.x;
       const dz = item.position.z - pos.z;
       const dist = Math.hypot(dx, dz);

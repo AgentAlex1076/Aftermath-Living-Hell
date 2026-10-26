@@ -687,5 +687,11 @@ export function buildHazmat(): THREE.Object3D {
   gun.visible = false;
   hips.add(gun);
 
+  // `gun` is listed so merging keeps it as its own (hidden) mesh instead of folding it into the hips.
+  root.userData.animated = [
+    'rollPivot', 'body', 'hips', 'head', 'armL', 'armR', 'forearmL', 'forearmR',
+    'handL', 'handR', 'legL', 'legR', 'shinL', 'shinR', 'gun',
+  ];
+
   return root;
 }

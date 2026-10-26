@@ -22,6 +22,7 @@ const L = B.cell;
 
 /** Every piece is baked to vertex colors and shares this, so a whole base costs ~2 draw calls per piece. */
 const PIECE_MATERIAL = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.85, metalness: 0.2, flatShading: true });
+const PILLAR_MATERIAL = new THREE.MeshStandardMaterial({ color: '#3a342c', roughness: 1, flatShading: true });
 
 /** Collider tags: placement checks skip your own walls where pieces are meant to touch. */
 export const BUILD_TAG = 'build';
@@ -53,6 +54,8 @@ export interface Piece {
   maxHp: number;
   readonly x: number;
   readonly z: number;
+  /** Slab height: foundations sit on their highest corner; walls sit on that slab. */
+  readonly y: number;
   readonly rot: number;
   readonly cell: readonly [number, number] | null;
   readonly edge: Edge | null;
@@ -184,11 +187,15 @@ export class Building {
     p.x = i * L + L / 2;
     p.z = j * L + L / 2;
     const r: FloorRect = { minX: p.x - L / 2, maxX: p.x + L / 2, minZ: p.z - L / 2, maxZ: p.z + L / 2 };
-    const lim = CONFIG.world.halfSize - 2;
     if (this.foundations.has(cellKey(i, j))) p.reason = 'ALREADY BUILT HERE';
-    else if (Math.abs(p.x) > lim || Math.abs(p.z) > lim) p.reason = 'EDGE OF THE WORLD';
     else if (this.ctx.noBuild.some((n) => r.minX < n.maxX && r.maxX > n.minX && r.minZ < n.maxZ && r.maxZ > n.minZ)) p.reason = 'TOO CLOSE TO THE HUT';
     else if (this.ctx.collision.overlapsBox(r.minX + 0.3, r.maxX - 0.3, r.minZ + 0.3, r.maxZ - 0.3, [BUILD_TAG, DEPLOY_TAG, FLOORABLE_TAG])) p.reason = 'SOMETHING IN THE WAY';
+    else {
+      const h = this.ctx.world.height;
+      const span = h.span(r.minX, r.maxX, r.minZ, r.maxZ);
+      if (span.max - span.min > 1.35 || span.slope > 24) p.reason = 'TOO STEEP';
+      else if ([[r.minX, r.minZ], [r.maxX, r.minZ], [r.minX, r.maxZ], [r.maxX, r.maxZ], [p.x, p.z]].some(([x, z]) => h.waterDepth(x, z) > -0.05)) p.reason = 'IN THE WATER';
+    }
   }
 
   /** Edges of the cell under the cursor, nearest first. */
@@ -263,6 +270,13 @@ export class Building {
     const player = this.ctx.player.position;
     if (this.ctx.collision.overlapsBox(r.minX, r.maxX, r.minZ, r.maxZ)) p.reason = 'SOMETHING IN THE WAY';
     else if (circleHitsRect(player.x, player.z, CONFIG.player.radius, r)) p.reason = "YOU'RE IN THE WAY";
+    else if (this.ctx.world.height.slopeDeg(p.x, p.z) > 22 && !this.ctx.world.height.isRoad(p.x, p.z)) p.reason = 'TOO STEEP';
+    else if (this.ctx.world.height.waterDepth(p.x, p.z) > -0.05) p.reason = 'IN THE WATER';
+  }
+
+  /** Ghost / grid height for a planned piece (foundations sit on the high corner). */
+  ghostY(p: Placement): number {
+    return this.slabY(p.def, p.x, p.z, p.cell, p.edge);
   }
 
   canAfford(cost: readonly ItemAmount[]): boolean {
@@ -285,8 +299,8 @@ export class Building {
     const piece = this.spawn(p.def, 'wood', p.x, p.z, p.rot, p.cell, p.edge);
     this.built++;
     events.emit('build:placed', { id: piece.def.id });
-    const top = new THREE.Vector3(p.x, Math.min(piece.size.h, 1.6) + 0.4, p.z);
-    this.ctx.debris.burst(p.x, 0.3, p.z, TIERS.wood.color, piece.def.kind === 'foundation' ? 18 : 10);
+    const top = new THREE.Vector3(p.x, piece.y + Math.min(piece.size.h, 1.6) + 0.4, p.z);
+    this.ctx.debris.burst(p.x, piece.y + 0.3, p.z, TIERS.wood.color, piece.def.kind === 'foundation' ? 18 : 10);
     this.ctx.floaters.spawn(top, piece.def.kind === 'foundation' ? 'THUD!' : 'KA-CHUNK!', 'word');
     events.emit('camera:shake', { amount: piece.def.kind === 'foundation' ? 0.12 : 0.08 });
     return piece;
@@ -297,7 +311,7 @@ export class Building {
   private spawn(def: PieceDef, tier: TierId, x: number, z: number, rot: number, cell: [number, number] | null, edge: Edge | null): Piece {
     const maxHp = pieceMaxHp(def, tier);
     const piece: Piece = {
-      uid: this.nextUid++, def, tier, hp: maxHp, maxHp, x, z, rot, cell, edge, size: sizeOf(def),
+      uid: this.nextUid++, def, tier, hp: maxHp, maxHp, x, z, y: this.slabY(def, x, z, cell, edge), rot, cell, edge, size: sizeOf(def),
       object: new THREE.Object3D(), colliders: [], occluder: null, interactable: null,
       storage: def.storageSlots ? new Inventory(def.storageSlots, 0) : null,
       door: def.kind === 'door' ? { open: false, swing: 0, hinge: null, collider: null } : null,
@@ -315,12 +329,12 @@ export class Building {
     if (piece.storage) {
       const hop = hopperVerb(def.hopper);
       piece.interactable = this.ctx.interactions.add({
-        id: `build:${piece.uid}`, label: hop.label, verb: hop.verb, position: new THREE.Vector3(x, 0, z), radius: 1.7,
+        id: `build:${piece.uid}`, label: hop.label, verb: hop.verb, position: new THREE.Vector3(x, piece.y, z), radius: 1.7,
         onInteract: () => this.ctx.openStorage(piece),
       });
     } else if (piece.door) {
       piece.interactable = this.ctx.interactions.add({
-        id: `build:${piece.uid}`, label: this.doorLabel(piece), verb: 'Open', position: new THREE.Vector3(x, 0, z), radius: 1.9,
+        id: `build:${piece.uid}`, label: this.doorLabel(piece), verb: 'Open', position: new THREE.Vector3(x, piece.y, z), radius: 1.9,
         onInteract: () => this.toggleDoor(piece),
       });
     }
@@ -334,9 +348,10 @@ export class Building {
   private attachModel(piece: Piece): void {
     const { def, tier } = piece;
     const obj = models.create(pieceModel(def, tier), piece.uid * 7919 + TIER_ORDER.indexOf(tier));
-    obj.position.set(piece.x, 0, piece.z);
+    obj.position.set(piece.x, piece.y, piece.z);
     obj.rotation.y = piece.rot;
     mergeColored(obj, PIECE_MATERIAL);
+    if (def.kind === 'foundation') this.addPillars(obj, piece);
     this.ctx.scene.add(obj);
     obj.updateMatrixWorld(true);
     piece.object = obj;
@@ -349,6 +364,46 @@ export class Building {
       piece.colliders = this.ctx.collision.addFromObject(obj, tag);
     }
     if (def.kind === 'wall' || def.kind === 'door') piece.occluder = this.ctx.occlusion.register(obj, 0.2);
+  }
+
+  /** Foundations sit on the highest corner they cover; walls sit on that slab; deployables sit on the ground. */
+  private slabY(def: PieceDef, x: number, z: number, cell: readonly [number, number] | null, edge: Edge | null): number {
+    const h = this.ctx.world.height;
+    if (def.kind === 'foundation' && cell) {
+      const x0 = cell[0] * L;
+      const z0 = cell[1] * L;
+      return Math.max(h.at(x0, z0), h.at(x0 + L, z0), h.at(x0, z0 + L), h.at(x0 + L, z0 + L));
+    }
+    if (edge) {
+      let y = 0;
+      let n = 0;
+      for (const [i, j] of edgeCells(edge)) {
+        const f = this.foundations.get(cellKey(i, j));
+        if (f) {
+          y = Math.max(y, f.y);
+          n++;
+        }
+      }
+      return n ? y : h.at(x, z);
+    }
+    const s = sizeOf(def);
+    const r = Math.max(s.w, s.d) / 2;
+    return h.span(x - r, x + r, z - r, z + r).min;
+  }
+
+  private addPillars(obj: THREE.Object3D, piece: Piece): void {
+    if (!piece.cell) return;
+    const x0 = piece.cell[0] * L;
+    const z0 = piece.cell[1] * L;
+    const h = this.ctx.world.height;
+    const min = Math.min(h.at(x0, z0), h.at(x0 + L, z0), h.at(x0, z0 + L), h.at(x0 + L, z0 + L));
+    const drop = piece.y - min;
+    if (drop < 0.07) return;
+    const box = new THREE.Mesh(new THREE.BoxGeometry(L * 0.9, drop + 0.05, L * 0.9), PILLAR_MATERIAL);
+    box.position.set(0, -drop / 2 - 0.02, 0);
+    box.castShadow = true;
+    box.receiveShadow = true;
+    obj.add(box);
   }
 
   private detachModel(piece: Piece): void {
@@ -378,7 +433,7 @@ export class Building {
   toggleDoor(piece: Piece): void {
     const d = piece.door;
     if (!d) return;
-    const at = new THREE.Vector3(piece.x, 2.3, piece.z);
+    const at = new THREE.Vector3(piece.x, piece.y + 2.3, piece.z);
     if (d.open) {
       const pp = this.ctx.player.position;
       if (circleHitsRect(pp.x, pp.z, CONFIG.player.radius, this.doorBox(piece.edge!))) {
@@ -415,19 +470,23 @@ export class Building {
 
   // --- Damage, support and collapse -------------------------------------------------------------
 
-  /** Raids (and the debug panel) hurt pieces through here. */
-  damage(piece: Piece, amount: number): void {
+  /** Raids (and the debug panel) hurt pieces through here. `remote` skips the effects (a siege fought without you). */
+  damage(piece: Piece, amount: number, remote = false): void {
     if (!this.pieces.has(piece) || amount <= 0) return;
     piece.hp -= amount;
+    if (remote) {
+      if (piece.hp <= 0) this.destroy(piece, 'destroyed', true);
+      return;
+    }
     const tier = TIERS[piece.tier];
-    const at = new THREE.Vector3(piece.x, Math.min(piece.size.h, 1.8), piece.z);
-    this.ctx.debris.burst(piece.x, at.y * 0.6, piece.z, tier.color, 6);
+    const at = new THREE.Vector3(piece.x, piece.y + Math.min(piece.size.h, 1.8), piece.z);
+    this.ctx.debris.burst(piece.x, piece.y + (at.y - piece.y) * 0.6, piece.z, tier.color, 6);
     this.ctx.floaters.spawn(at, tier.hitWords[Math.floor(Math.random() * tier.hitWords.length)], 'word', undefined, 0, 0, amount);
     sfx('build.hit', { x: piece.x, z: piece.z, param: piece.tier === 'wood' ? 0 : 1, pitch: 0.9 + Math.random() * 0.2 });
     if (piece.hp <= 0) this.destroy(piece, 'destroyed');
   }
 
-  destroy(piece: Piece, cause: 'destroyed' | 'collapsed' | 'demolished'): void {
+  destroy(piece: Piece, cause: 'destroyed' | 'collapsed' | 'demolished', remote = false): void {
     if (!this.pieces.delete(piece)) return;
     this.detachModel(piece);
     if (piece.interactable) this.ctx.interactions.remove(piece.interactable);
@@ -445,23 +504,25 @@ export class Building {
       this.ctx.storageGone(piece);
     }
 
-    const tier = TIERS[piece.tier];
-    const h = Math.min(piece.size.h, 2);
-    this.ctx.debris.burst(piece.x, h * 0.5, piece.z, tier.color, piece.def.kind === 'foundation' ? 20 : 30);
-    const word = cause === 'collapsed' ? 'KRRRUMBLE!' : cause === 'demolished' ? 'KER-RASH!' : 'KRA-KOOM!';
-    sfx('build.break', { x: piece.x, z: piece.z, param: piece.tier === 'wood' ? 0 : 1 });
-    this.ctx.floaters.spawn(new THREE.Vector3(piece.x, h + 0.6, piece.z), word, 'word', '#f2b705', cause === 'collapsed' ? 0.15 : 0);
-    events.emit('camera:shake', { amount: cause === 'collapsed' ? 0.2 : 0.3 });
+    if (!remote) {
+      const tier = TIERS[piece.tier];
+      const h = Math.min(piece.size.h, 2);
+      this.ctx.debris.burst(piece.x, piece.y + h * 0.5, piece.z, tier.color, piece.def.kind === 'foundation' ? 20 : 30);
+      const word = cause === 'collapsed' ? 'KRRRUMBLE!' : cause === 'demolished' ? 'KER-RASH!' : 'KRA-KOOM!';
+      sfx('build.break', { x: piece.x, z: piece.z, param: piece.tier === 'wood' ? 0 : 1 });
+      this.ctx.floaters.spawn(new THREE.Vector3(piece.x, piece.y + h + 0.6, piece.z), word, 'word', '#f2b705', cause === 'collapsed' ? 0.15 : 0);
+      events.emit('camera:shake', { amount: cause === 'collapsed' ? 0.2 : 0.3 });
+    }
 
     if (piece.cell) {
       for (const e of cellEdges(...piece.cell)) {
         const w = this.walls.get(edgeKey(e));
-        if (w && !this.supported(e)) this.destroy(w, 'collapsed');
+        if (w && !this.supported(e)) this.destroy(w, 'collapsed', remote);
       }
     }
     if (piece.edge && piece.def.kind === 'wall') {
       const door = this.doors.get(edgeKey(piece.edge));
-      if (door) this.destroy(door, 'collapsed');
+      if (door) this.destroy(door, 'collapsed', remote);
     }
   }
 
@@ -531,7 +592,7 @@ export class Building {
   }
 
   repair(piece: Piece): void {
-    const at = new THREE.Vector3(piece.x, Math.min(piece.size.h, 1.8) + 0.3, piece.z);
+    const at = new THREE.Vector3(piece.x, piece.y + Math.min(piece.size.h, 1.8) + 0.3, piece.z);
     if (piece.hp >= piece.maxHp - 0.5) {
       this.ctx.floaters.spawn(at, 'NOT DAMAGED', 'warn');
       return;
@@ -552,7 +613,7 @@ export class Building {
   }
 
   upgrade(piece: Piece): void {
-    const at = new THREE.Vector3(piece.x, Math.min(piece.size.h, 1.8) + 0.4, piece.z);
+    const at = new THREE.Vector3(piece.x, piece.y + Math.min(piece.size.h, 1.8) + 0.4, piece.z);
     const next = nextTier(piece.tier);
     const cost = this.upgradeCost(piece);
     if (!next || !cost) {
@@ -571,7 +632,7 @@ export class Building {
     this.attachModel(piece);
     if (piece.door && piece.interactable) piece.interactable.label = this.doorLabel(piece);
     const tier = TIERS[next];
-    this.ctx.debris.burst(piece.x, Math.min(piece.size.h, 2) * 0.5, piece.z, tier.color, 26);
+    this.ctx.debris.burst(piece.x, piece.y + Math.min(piece.size.h, 2) * 0.5, piece.z, tier.color, 26);
     this.ctx.floaters.spawn(at, 'UPGRADED!', 'word', tier.color);
     sfx('build.upgrade', { x: piece.x, z: piece.z });
     this.ctx.floaters.spawn(at.clone().setY(at.y - 0.55), tier.name.toUpperCase(), 'gain', tier.color, 0.1);
@@ -602,7 +663,7 @@ export class Building {
         return false;
       }
     }
-    const at = new THREE.Vector3(piece.x, 1.2, piece.z);
+    const at = new THREE.Vector3(piece.x, piece.y + 1.2, piece.z);
     let lost = false;
     this.refund(piece).forEach((a, i) => {
       const left = this.ctx.inventory.add(a.item, a.qty);

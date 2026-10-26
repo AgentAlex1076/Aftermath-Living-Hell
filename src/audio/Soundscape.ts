@@ -9,13 +9,15 @@ export interface SoundState {
   dead: boolean;
   raid: boolean;
   boss: boolean;
-  /** Seconds until the next raid (ignored during a raid). */
+  /** Seconds until a called or forced raid lands; Infinity when none is coming (ignored during a raid). */
   countdown: number;
   gas: number;
   rain: number;
   /** Player ground speed in m/s and whether they're sprinting. */
   speed: number;
   sprinting: boolean;
+  /** Wading through a ford. */
+  wading: boolean;
   /** 0..1 stamina. */
   stamina: number;
   x: number;
@@ -64,12 +66,19 @@ export class Soundscape {
     registerSounds();
     audio.onUnlock(() => this.start());
     events.on('raid:warning', ({ seconds }) => sfx('raid.siren', { param: seconds <= 10 ? 1 : seconds <= 30 ? 0.5 : 0 }));
+    events.on('raid:calling', () => {
+      sfx('raid.siren', { param: 0.5 });
+      sfx('raid.siren', { param: 1, delay: 1.4 });
+    });
+    events.on('raid:inbound', () => sfx('raid.siren', { param: 0 }));
+    events.on('horde:stir', ({ level }) => sfx('amb.scream', { volume: level >= 75 ? 1.6 : 1.2, pitch: 0.8 }));
     events.on('raid:start', ({ raid }) => {
       sfx('raid.horn');
       if (raid % 5 === 0) sfx('boss.roar', { delay: 1.6 });
     });
-    events.on('raid:end', () => sfx('raid.clear', { delay: 0.3 }));
-    events.on('raid:penalty', () => sfx('raid.penalty'));
+    events.on('raid:end', ({ result }) => sfx(result === 'breached' ? 'raid.penalty' : 'raid.clear', { delay: 0.3 }));
+    events.on('raid:siege', () => sfx('raid.horn', { volume: 0.6 }));
+    events.on('raid:engage', () => sfx('raid.horn'));
     events.on('player:dodge', () => sfx('whoosh'));
     events.on('build:placed', () => sfx('build.place'));
     events.on('recipe:made', () => sfx('craft.done'));
@@ -189,7 +198,8 @@ export class Soundscape {
     const stride = s.sprinting ? 1.55 : 1.15;
     if (this.stepDist < stride) return;
     this.stepDist = 0;
-    sfx('step', { x: s.x, z: s.z, param: (s.sprinting ? 0.8 : 0.35) + s.rain * 0.2, pitch: 0.9 + Math.random() * 0.2 });
+    if (s.wading) sfx('step.water', { x: s.x, z: s.z, pitch: 0.85 + Math.random() * 0.3 });
+    else sfx('step', { x: s.x, z: s.z, param: (s.sprinting ? 0.8 : 0.35) + s.rain * 0.2, pitch: 0.9 + Math.random() * 0.2 });
   }
 
   /** The respirator: slow and quiet normally, ragged when sprinting, exhausted or in gas. */
