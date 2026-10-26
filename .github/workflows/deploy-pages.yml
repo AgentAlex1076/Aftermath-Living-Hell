@@ -3,6 +3,9 @@ name: Deploy to GitHub Pages
 on:
   push:
     branches: [main]
+    paths-ignore:
+      - 'site/**'
+      - 'README.md'
   workflow_dispatch:
 
 permissions:
@@ -26,6 +29,21 @@ jobs:
         run: npm run build
         env:
           GITHUB_PAGES: 'true'
+      - name: Publish site/ on main (branch-based Pages)
+        run: |
+          rm -rf site
+          mkdir site
+          cp -R dist/. site/
+          touch site/.nojekyll
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add site
+          if git diff --staged --quiet; then
+            echo "site/ unchanged"
+          else
+            git commit -m "Update GitHub Pages build in site/"
+            git push
+          fi
       - name: Deploy to gh-pages
         uses: peaceiris/actions-gh-pages@v4
         with:

@@ -7,10 +7,7 @@ TypeScript + Three.js + Vite. See `GAME_DESIGN.md` for the full design and build
 
 **Live:** https://agentalex1076.github.io/Aftermath-Living-Hell/
 
-Pushes to `main` build the game and publish it to the `gh-pages` branch.
-
-One-time repo setting (needs admin): **Settings → Pages → Build and deployment →
-Branch → `gh-pages` / (root) → Save**.
+(Pushes to `main` rebuild `site/` and the `gh-pages` branch.)
 
 ## Run it locally
 

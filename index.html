@@ -4,6 +4,15 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Aftermath: Living Hell</title>
+    <!-- GitHub Pages currently serves the main branch root. Send visitors to the built game. -->
+    <script>
+      if (location.hostname.endsWith('github.io')) {
+        var base = location.pathname.replace(/\/?$/, '/');
+        if (base.indexOf('/site/') === -1) {
+          location.replace(base + 'site/');
+        }
+      }
+    </script>
   </head>
   <body>
     <div id="app"></div>
