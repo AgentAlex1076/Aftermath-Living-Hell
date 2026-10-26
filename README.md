@@ -3,7 +3,13 @@
 Wave-defense survival game in a gas-ravaged wasteland. Built entirely in code with
 TypeScript + Three.js + Vite. See `GAME_DESIGN.md` for the full design and build phases.
 
-## Run it
+## Play
+
+**Live:** https://agentalex1076.github.io/Aftermath-Living-Hell/
+
+Pushes to `main` build and deploy via GitHub Pages (Actions).
+
+## Run it locally
 
 ```bash
 npm install
@@ -11,6 +17,7 @@ npm run dev        # then open http://localhost:5173
 ```
 
 `npm run build` type-checks and produces a production build in `dist/`.
+For a Pages-style build locally: `GITHUB_PAGES=true npm run build`.
 
 ## Controls
 
