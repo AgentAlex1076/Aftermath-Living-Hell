@@ -58,13 +58,13 @@ export class StartScreen {
         </p>
         ${record}
         <nav class="cover-menu">
-          <button class="btn" type="button" data-a="start">ENTER THE WASTELAND</button>
-        <button class="btn play-btn" type="button" data-a="start">
-          <span class="btn-label acid-target" style="--acid-delay: 0.03s">ENTER THE WASTELAND</span>
-        </button>
-        <div class="cover-row">
-          <button class="btn secondary" type="button" data-a="codex">CODEX</button>
-          <button class="btn secondary" type="button" data-a="ledger">THE LEDGER</button>
+          <button class="btn play-btn" type="button" data-a="start">
+            <span class="btn-label acid-target" style="--acid-delay: 0.03s">ENTER THE WASTELAND</span>
+          </button>
+          <div class="cover-row">
+            <button class="btn secondary" type="button" data-a="codex">CODEX</button>
+            <button class="btn secondary" type="button" data-a="ledger">THE LEDGER</button>
+          </div>
         </nav>
       </div>
     `;

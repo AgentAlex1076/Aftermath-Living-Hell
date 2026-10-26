@@ -89,17 +89,10 @@ export const CONFIG = {
   },
 
   survival: {
-    maxHunger: 100,
-    startHunger: 80,
-    /** Hunger lost per second (100 → 0 in about 7 minutes). */
-    hungerDrain: 0.24,
-    sprintHungerMultiplier: 1.7,
-    /** Health lost per second while starving. */
-    starveDamage: 1.5,
-    /** Passive healing while well fed and breathing clean air. */
-    regenHungerThreshold: 60,
-    regenPerSecond: 0.4,
-    regenHungerCost: 0.15,
+    /** Passive HP regen per second while out of combat and breathing clean air. */
+    regenPerSecond: 0.55,
+    /** Seconds without taking damage before out-of-combat regen starts. */
+    regenCombatDelay: 10,
   },
 
   crafting: {
@@ -240,9 +233,12 @@ export const CONFIG = {
     repairPerHit: 0.2,
     /** Repairing a piece from 0 to full costs this fraction of its tier cost. */
     repairCostFactor: 0.5,
-    /** Fraction of the current tier cost returned on demolish. */
+    /** Fraction of the current tier cost returned when you scrap a piece. */
     refundFactor: 0.5,
-    demolishHoldTime: 0.7,
+    /** Consecutive tool hits needed to scrap a piece (hammer / axe / pickaxe). */
+    demolishHits: 5,
+    /** Max seconds between scrap hits before the count resets. */
+    demolishHitWindow: 2,
   },
 
   interact: {

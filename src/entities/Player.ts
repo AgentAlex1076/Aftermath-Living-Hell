@@ -3,6 +3,16 @@ import { CONFIG } from '../data/config';
 import { events } from '../core/EventBus';
 import type { Input } from '../core/Input';
 import { dampAngle, dampFactor } from '../core/math';
+import type { FoodBuffDef } from '../data/items';
+import {
+  applyFoodBuff,
+  buffMaxHealth,
+  buffMove,
+  buffStaminaMax,
+  buffStaminaRegen,
+  tickBuff,
+  type ActiveBuff,
+} from '../gameplay/Buffs';
 import type { CameraRig } from '../render/CameraRig';
 import type { CollisionWorld } from '../physics/Collision';
 import type { HeightField } from '../world/Height';
@@ -33,10 +43,13 @@ export class Player {
   state: PlayerState = 'normal';
   health: number = CONFIG.player.maxHealth;
   filter: number = CONFIG.player.maxFilter;
-  hunger: number = CONFIG.survival.startHunger;
   stamina: number = CONFIG.player.stamina.max;
   exhausted = false;
   sprinting = false;
+  /** Active food boost; eating again replaces it. */
+  buff: ActiveBuff | null = null;
+  /** Seconds since last damage; out-of-combat regen needs this ≥ config delay. */
+  combatIdle: number = CONFIG.survival.regenCombatDelay;
   /** Ground slope underfoot, degrees. Debug and the HUD can read it. */
   slope = 0;
   /** Water depth while wading through a ford (0 on dry ground). */
@@ -92,6 +105,14 @@ export class Player {
     return this.health > 0;
   }
 
+  get healthMax(): number {
+    return CONFIG.player.maxHealth * buffMaxHealth(this.buff);
+  }
+
+  get staminaMax(): number {
+    return CONFIG.player.stamina.max * buffStaminaMax(this.buff);
+  }
+
   /** Starts a gathering swing. Returns false if busy (already swinging or rolling). */
   startSwing(duration: number, armed: boolean): boolean {
     if (this.swinging || this.state !== 'normal') return false;
@@ -106,10 +127,29 @@ export class Player {
   damage(amount: number): void {
     if (this.godMode || amount <= 0) return;
     this.health = Math.max(0, this.health - amount);
+    this.combatIdle = 0;
   }
 
   heal(amount: number): void {
-    this.health = Math.min(CONFIG.player.maxHealth, this.health + amount);
+    this.health = Math.min(this.healthMax, this.health + amount);
+  }
+
+  /** Replaces any existing food buff. */
+  eatBuff(def: FoodBuffDef): void {
+    this.buff = applyFoodBuff(this.buff, def);
+    if (this.health > this.healthMax) this.health = this.healthMax;
+    if (this.stamina > this.staminaMax) this.stamina = this.staminaMax;
+  }
+
+  /** Ticks the food buff and combat-idle clock. Call once per survival tick. */
+  tickBuffs(dt: number): void {
+    this.combatIdle += dt;
+    const before = this.buff;
+    this.buff = tickBuff(this.buff, dt);
+    if (before && !this.buff) {
+      this.health = Math.min(this.health, CONFIG.player.maxHealth);
+      this.stamina = Math.min(this.stamina, CONFIG.player.stamina.max);
+    }
   }
 
   teleport(x: number, z: number, y = 0): void {
@@ -239,7 +279,7 @@ export class Player {
     const walk = height.walk(this.position.x, this.position.z);
     this.sprinting = moving && !this.swinging && !this.aiming && walk.sprint && input.isDown('sprint') && !this.exhausted && this.stamina > 0;
     let speed = this.sprinting ? cfg.sprintSpeed : cfg.walkSpeed;
-    speed *= walk.mul;
+    speed *= walk.mul * buffMove(this.buff);
     if (this.swinging) speed *= cfg.swingMoveMultiplier;
     if (this.load > 0) speed *= CONFIG.guns.weightSoft / (CONFIG.guns.weightSoft + this.load);
     if (this.aiming) speed *= CONFIG.combat.aimMove;
@@ -276,8 +316,9 @@ export class Player {
 
   private updateStamina(dt: number): void {
     const s = CONFIG.player.stamina;
+    const max = this.staminaMax;
     if (this.infiniteStamina) {
-      this.stamina = s.max;
+      this.stamina = max;
       this.exhausted = false;
       return;
     }
@@ -290,8 +331,10 @@ export class Player {
       }
     } else if (this.state !== 'dodging') {
       this.staminaRegenDelay -= dt;
-      if (this.staminaRegenDelay <= 0) this.stamina = Math.min(s.max, this.stamina + s.regen * dt);
+      if (this.staminaRegenDelay <= 0) {
+        this.stamina = Math.min(max, this.stamina + s.regen * buffStaminaRegen(this.buff) * dt);
+      }
     }
-    if (this.exhausted && this.stamina >= s.exhaustedThreshold) this.exhausted = false;
+    if (this.exhausted && this.stamina >= s.exhaustedThreshold * buffStaminaMax(this.buff)) this.exhausted = false;
   }
 }

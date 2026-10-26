@@ -30,9 +30,11 @@ export class Gathering {
     private readonly player: Player,
     private readonly debris: Debris,
     private readonly floaters: FloatingText,
-    private readonly eat: (amount: number) => void,
-    /** The hammer works on building pieces, not resource nodes. */
-    private readonly hammerHit: () => void,
+    /**
+     * Hammer / axe / pickaxe swing at a building piece.
+     * Returns true if the swing was spent on a piece (repair or scrap hit).
+     */
+    private readonly buildToolHit: () => boolean,
     /** Melee against mutants. Returns true if the swing connected. */
     private readonly melee: () => boolean,
   ) {}
@@ -65,17 +67,18 @@ export class Gathering {
     const p = this.player;
     const g = CONFIG.gathering;
     const tool = this.inv.equippedTool;
-    if (tool?.kind === 'hammer') {
-      this.hammerHit();
-      return;
+    if (tool && (tool.kind === 'hammer' || tool.kind === 'axe' || tool.kind === 'pickaxe')) {
+      if (this.buildToolHit()) return;
+      if (tool.kind === 'hammer') return;
     }
     const node = this.world.findNodeInCone(p.position, p.facing, g.reach, g.coneDeg);
     if (!node) return;
 
     const def = node.def;
+    const melee = this.player.buff?.def.melee ?? 1;
     let power: number;
-    if (tool) power = tool.kind === def.tool ? tool.power : tool.power * g.wrongToolMultiplier;
-    else power = g.handPower * def.handMultiplier;
+    if (tool) power = (tool.kind === def.tool ? tool.power : tool.power * g.wrongToolMultiplier) * melee;
+    else power = g.handPower * def.handMultiplier * melee;
 
     _p.set(node.x, 1.3, node.z);
     if (power <= 0) {
@@ -162,27 +165,28 @@ export class Gathering {
     }
     const p = this.player;
     const filterFull = p.filter >= CONFIG.player.maxFilter - 1;
-    const healthFull = p.health >= CONFIG.player.maxHealth - 0.5;
-    const hungerFull = p.hunger >= CONFIG.survival.maxHunger - 1;
-    if (c.filter && !c.heal && filterFull) {
+    const healthFull = p.health >= p.healthMax - 0.5;
+    if (c.filter && !c.heal && !c.buff && filterFull) {
       events.emit('toast', { text: 'Filter is already fresh.', tone: 'info' });
       return;
     }
-    if (c.hunger && hungerFull && (!c.heal || c.heal < 0 || healthFull)) {
-      events.emit('toast', { text: "You're stuffed. Save it for later.", tone: 'info' });
-      return;
-    }
-    if (!c.hunger && c.heal && c.heal > 0 && !c.filter && healthFull) {
+    if (!c.buff && c.heal && c.heal > 0 && !c.filter && healthFull) {
       events.emit('toast', { text: "You're not hurt.", tone: 'info' });
       return;
     }
     if (c.filter) p.filter = Math.min(CONFIG.player.maxFilter, p.filter + c.filter);
-    if (c.hunger) this.eat(c.hunger);
     if (c.heal && c.heal > 0) p.heal(c.heal);
     if (c.heal && c.heal < 0) p.damage(-c.heal);
+    if (c.buff) p.eatBuff(c.buff);
     this.inv.removeAt(index, 1);
-    sfx(c.filter ? 'filter' : c.hunger ? 'eat' : 'rummage');
+    const food = !!c.buff || def.kind === 'food';
+    sfx(c.filter ? 'filter' : food ? 'eat' : 'rummage');
     events.emit('toast', { text: c.message, tone: c.heal && c.heal < 0 ? 'danger' : c.filter ? 'toxic' : 'info' });
-    this.floaters.spawn(p.position.clone().setY(2.1), c.filter ? 'SKRRT-CLICK' : c.heal && c.heal < 0 ? 'BLEGH!' : c.hunger ? 'CHOMP!' : 'GULP!', 'word', def.color);
+    this.floaters.spawn(
+      p.position.clone().setY(2.1),
+      c.filter ? 'SKRRT-CLICK' : c.heal && c.heal < 0 ? 'BLEGH!' : food ? 'CHOMP!' : 'GULP!',
+      'word',
+      def.color,
+    );
   }
 }

@@ -1,4 +1,6 @@
+import { CONFIG } from '../data/config';
 import { BUILD_TABS, PIECES, TIERS, nextTier, pieceCost, type PieceDef, type PieceId } from '../data/buildables';
+import type { ToolKind } from '../data/items';
 import type { ItemAmount } from '../data/loot';
 import type { Inventory } from '../gameplay/Inventory';
 import type { Building, Piece, Placement } from '../gameplay/Building';
@@ -104,20 +106,25 @@ export class BuildUI {
     this.cursorTag.style.transform = `translate(${mouseX + 26}px, ${mouseY + 14}px)`;
   }
 
-  /** The piece the hammer is pointed at, with repair/upgrade/demolish costs. */
-  setPieceCard(piece: Piece | null, demolishProgress: number): void {
+  /** The piece under a scrap tool, with repair / upgrade / salvage readout. */
+  setPieceCard(piece: Piece | null, demolishProgress: number, tool: ToolKind | null): void {
     this.card.classList.toggle('on', !!piece);
     if (!piece) {
       this.cardKey = '';
       return;
     }
     const b = this.building;
+    const needed = CONFIG.building.demolishHits;
     const damaged = piece.hp < piece.maxHp - 0.5;
-    const repair = damaged ? b.repairCost(piece) : [];
-    const upgrade = b.upgradeCost(piece);
+    const hammer = tool === 'hammer';
+    const repair = damaged && hammer ? b.repairCost(piece) : [];
+    const upgrade = hammer ? b.upgradeCost(piece) : null;
     const refund = b.refund(piece);
+    const scrapLabel = hammer && damaged
+      ? `SCRAP · ${needed} HITS AT FULL HP`
+      : `SCRAP · ${needed} HITS (2s)`;
     const counts = [...repair, ...(upgrade ?? [])].map((a) => this.inv.count(a.item)).join(',');
-    const key = `${piece.uid}|${piece.tier}|${Math.round(piece.hp)}|${counts}|${b.free}`;
+    const key = `${piece.uid}|${piece.tier}|${Math.round(piece.hp)}|${counts}|${b.free}|${tool}|${Math.round(demolishProgress * needed)}`;
     if (key !== this.cardKey) {
       this.cardKey = key;
       const tier = TIERS[piece.tier];
@@ -131,9 +138,9 @@ export class BuildUI {
           ${tiered ? `<span class="pc-tier">${tier.name.toUpperCase()}</span>` : ''}
         </div>
         <div class="pc-hp"><div class="pc-hp-fill"></div><span>${Math.ceil(piece.hp)} / ${piece.maxHp} HP</span></div>
-        <div class="pc-row"><kbd>LMB</kbd><span>${damaged ? 'REPAIR' : 'NOT DAMAGED'}</span><span class="pc-cost">${damaged ? this.chips(repair) : ''}</span></div>
-        ${tiered ? `<div class="pc-row"><kbd>R</kbd><span>${upgrade ? `UPGRADE → ${nextName}` : 'MAX TIER'}</span><span class="pc-cost">${upgrade ? this.chips(upgrade) : ''}</span></div>` : ''}
-        <div class="pc-row pc-demolish"><kbd>X</kbd><span>HOLD TO DEMOLISH</span><span class="pc-cost">${this.chips(refund, 'refund')}</span><i class="pc-fill"></i></div>
+        ${hammer ? `<div class="pc-row"><kbd>LMB</kbd><span>${damaged ? 'REPAIR' : 'NOT DAMAGED'}</span><span class="pc-cost">${damaged ? this.chips(repair) : ''}</span></div>` : ''}
+        ${hammer && tiered ? `<div class="pc-row"><kbd>R</kbd><span>${upgrade ? `UPGRADE → ${nextName}` : 'MAX TIER'}</span><span class="pc-cost">${upgrade ? this.chips(upgrade) : ''}</span></div>` : ''}
+        <div class="pc-row pc-demolish"><kbd>LMB</kbd><span>${scrapLabel}</span><span class="pc-cost">${this.chips(refund, 'refund')}</span><i class="pc-fill"></i></div>
       `;
     }
     q(this.card, '.pc-hp-fill').style.transform = `scaleX(${Math.max(0, piece.hp / piece.maxHp)})`;

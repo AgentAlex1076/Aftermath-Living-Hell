@@ -5,7 +5,7 @@ import { GameLoop } from '../core/GameLoop';
 import { Input, type Action } from '../core/Input';
 import { clamp, damp, lerp, smoothstep, wrapAngle } from '../core/math';
 import { Rng } from '../core/random';
-import { evaluateBuild, makePipePistol } from '../data/guns';
+import { evaluateBuild, makePipePistol, makeStockGun } from '../data/guns';
 import { ALL_ITEM_IDS, ITEMS, type ItemDef, type ItemId } from '../data/items';
 import { ALL_ENEMY_IDS, BOSS_IDS, ENEMIES, type EnemyId } from '../data/enemies';
 import type { ItemAmount } from '../data/loot';
@@ -31,7 +31,6 @@ import { Siege } from '../gameplay/Siege';
 import { Shooting } from '../gameplay/Shooting';
 import { Survival } from '../gameplay/Survival';
 import { BuildUI, pieceIconKey } from '../ui/BuildUI';
-import { GunBench } from '../ui/GunBench';
 import { CraftingPanel, OvenPanel, StoragePanel } from '../ui/StationPanels';
 import { assembleGunHeld } from '../models/guns';
 import { models, registerModels } from '../models';
@@ -107,7 +106,6 @@ export class Game {
   private readonly craftingPanel: CraftingPanel;
   private readonly ovenPanel: OvenPanel;
   private readonly storagePanel: StoragePanel;
-  private readonly gunBench: GunBench;
   private readonly shooting: Shooting;
   private readonly defenses: Defenses;
   private readonly building: Building;
@@ -125,10 +123,11 @@ export class Game {
   private roamClock = 0;
   private openStorage: Piece | null = null;
   private hammerTarget: Piece | null = null;
-  private demolishTime = 0;
-  private demolishArmed = true;
+  /** Consecutive scrap hits on `hammerTarget` (resets if the 2s window lapses). */
+  private demolishHits = 0;
+  /** Seconds left before scrap progress resets. */
+  private demolishWindow = 0;
   private shownBuildHint = false;
-  private shownGunHint = false;
   private ovenGlow = 0;
   /** Metres waded since the last splash (and the noise it makes). */
   private wadeDist = 0;
@@ -201,7 +200,6 @@ export class Game {
       seed: this.seed,
       onUseWorkbench: () => this.setInventoryOpen(true, 'craft'),
       onUseOven: () => this.setInventoryOpen(true, 'oven'),
-      onUseGunBench: () => this.setGunBenchOpen(true),
       onUseSiren: () => this.crankSiren(),
     });
     this.world.update(0, this.area.spawn, true);
@@ -227,9 +225,8 @@ export class Game {
     this.survival = new Survival(this.world, this.player);
     this.gathering = new Gathering(
       this.world, this.inventory, this.player, this.debris, this.floaters,
-      (n) => this.survival.eat(n),
-      () => this.onHammerHit(),
-      () => this.horde.strike(meleePower(this.inventory.equippedTool?.power)),
+      () => this.onBuildToolHit(),
+      () => this.horde.strike(meleePower(this.inventory.equippedTool?.power) * (this.player.buff?.def.melee ?? 1)),
     );
     this.crafting = new Crafting(this.inventory, (r) => this.onCrafted(r));
     this.oven = new Oven(this.inventory);
@@ -291,7 +288,6 @@ export class Game {
     this.craftingPanel = new CraftingPanel(this.inventoryView.side, this.crafting, this.inventory, this.icons, () => this.nearWorkbench());
     this.ovenPanel = new OvenPanel(this.inventoryView.side, this.oven, this.inventory, this.icons);
     this.storagePanel = new StoragePanel(this.inventoryView.side);
-    this.gunBench = new GunBench(uiRoot, this.inventory, this.icons);
     this.inventory.onChange(() => {
       this.syncHeldItem();
       this.scanParts();
@@ -334,9 +330,11 @@ export class Game {
         this.world.update(0, new THREE.Vector3(x, 0, z), true);
         this.player.teleport(x, z, this.world.height.at(x, z));
       },
-      openGunBench: () => this.setGunBenchOpen(true),
       giveGun: () => {
         this.inventory.add('craftedGun', 1, makePipePistol());
+      },
+      giveRifle: () => {
+        this.inventory.add('craftedGun', 1, makeStockGun('scrapRifle'));
       },
       giveKit: () => {
         const kit: [ItemId, number][] = [
@@ -427,8 +425,9 @@ export class Game {
     this.hud.setVisible(true);
     this.hud.setCrosshair(0, 0, false);
 
+    if (!this.inventory.slots.some((s) => s?.gun)) this.inventory.add('craftedGun', 1, makePipePistol());
     window.setTimeout(() => events.emit('toast', { text: 'Your gear is in the crate by the door. Grab it.', tone: 'info' }), 700);
-    window.setTimeout(() => events.emit('toast', { text: 'The Gun Bench is between the table and the oven. A receiver is the core.', tone: 'info' }), 2800);
+    window.setTimeout(() => events.emit('toast', { text: 'Drag a gun part onto your pistol in the backpack to mod it.', tone: 'info' }), 2800);
     window.setTimeout(() => events.emit('toast', { text: 'Stay close to the hut. Something is moving in the fog.', tone: 'warn' }), 5200);
     window.setTimeout(() => events.emit('toast', { text: "Noise draws the horde. Crank the siren by the door when you're ready for them.", tone: 'info' }), 8200);
   }
@@ -436,7 +435,6 @@ export class Game {
   private setPaused(paused: boolean): void {
     if (this.state !== 'playing' && this.state !== 'paused') return;
     if (paused && this.inventoryView.open) this.setInventoryOpen(false);
-    if (paused && this.gunBench.isOpen) this.setGunBenchOpen(false);
     if (paused && this.mapScreen.open) this.setMapOpen(false);
     this.state = paused ? 'paused' : 'playing';
     this.input.enabled = !paused;
@@ -449,7 +447,6 @@ export class Game {
   private setInventoryOpen(open: boolean, side: 'craft' | 'oven' | 'storage' = 'craft', storage: Piece | null = null): void {
     if (this.state !== 'playing') return;
     if (open) {
-      this.setGunBenchOpen(false);
       this.setBuildMode(false);
       this.craftingPanel.setVisible(side === 'craft');
       this.ovenPanel.setVisible(side === 'oven');
@@ -470,21 +467,6 @@ export class Game {
     document.body.classList.toggle('playing', !open);
   }
 
-  private setGunBenchOpen(open: boolean): void {
-    if (this.state !== 'playing') return;
-    if (open) {
-      this.setBuildMode(false);
-      if (this.inventoryView.open) this.setInventoryOpen(false);
-    }
-    if (open !== this.gunBench.isOpen) sfx(open ? 'ui.open' : 'ui.close');
-    this.gunBench.setOpen(open);
-    this.input.enabled = !open;
-    document.body.classList.toggle('playing', !open);
-    if (open && !this.shownGunHint) {
-      this.shownGunHint = true;
-      events.emit('toast', { text: 'Receiver first. Every part has to connect. Where you put it changes how it shoots.', tone: 'info' });
-    }
-  }
 
   /** The full-screen map. The world keeps running underneath, like the backpack. */
   private setMapOpen(open: boolean): void {
@@ -493,7 +475,6 @@ export class Game {
     if (open) {
       this.setBuildMode(false);
       if (this.inventoryView.open) this.setInventoryOpen(false);
-      if (this.gunBench.isOpen) this.setGunBenchOpen(false);
     }
     sfx(open ? 'ui.open' : 'ui.close');
     this.mapScreen.setOpen(open);
@@ -505,7 +486,6 @@ export class Game {
   private setBuildMode(on: boolean): void {
     if (on && this.state !== 'playing') return;
     if (on === this.buildMode.active) return;
-    if (on) this.setGunBenchOpen(false);
     this.buildMode.setActive(on);
     document.body.classList.toggle('building', on);
     this.hammerTarget = null;
@@ -515,32 +495,68 @@ export class Game {
     }
   }
 
-  /** The hammer's swing landed: repair whatever it's pointed at. */
-  private onHammerHit(): void {
-    const target = this.hammerTarget;
-    if (target && this.building.pieces.has(target)) this.building.repair(target);
+  private isScrapTool(kind: string | undefined): boolean {
+    return kind === 'hammer' || kind === 'axe' || kind === 'pickaxe';
   }
 
-  /** Hammer equipped (outside build mode): aim at a piece, R upgrades, hold X demolishes. */
+  private resetDemolish(): void {
+    this.demolishHits = 0;
+    this.demolishWindow = 0;
+  }
+
+  /**
+   * Hammer / axe / pickaxe impact on the aimed piece.
+   * Hammer repairs damaged pieces; otherwise each hit advances scrap progress (5 hits, 2s apart).
+   */
+  private onBuildToolHit(): boolean {
+    const tool = this.inventory.equippedTool;
+    if (!this.isScrapTool(tool?.kind)) return false;
+    const target = this.hammerTarget;
+    if (!target || !this.building.pieces.has(target)) return false;
+
+    if (tool!.kind === 'hammer' && target.hp < target.maxHp - 0.5) {
+      this.building.repair(target);
+      this.resetDemolish();
+      return true;
+    }
+
+    this.registerDemolishHit(target);
+    return true;
+  }
+
+  private registerDemolishHit(piece: Piece): void {
+    const B = CONFIG.building;
+    if (piece !== this.hammerTarget || this.demolishWindow <= 0) this.demolishHits = 0;
+    this.demolishHits += 1;
+    this.demolishWindow = B.demolishHitWindow;
+
+    const at = new THREE.Vector3(piece.x, piece.y + Math.min(piece.size.h, 1.8), piece.z);
+    this.debris.burst(piece.x, piece.y + Math.min(piece.size.h, 1.4) * 0.5, piece.z, '#c4c1b8', 8);
+    this.floaters.spawn(at, `${this.demolishHits}/${B.demolishHits}`, 'word', '#f2b705');
+    sfx('build.hit', { x: piece.x, z: piece.z, param: piece.tier === 'wood' ? 0 : 1, pitch: 0.85 + Math.random() * 0.2 });
+    events.emit('camera:shake', { amount: 0.08 });
+
+    if (this.demolishHits >= B.demolishHits) {
+      this.resetDemolish();
+      if (this.building.demolish(piece)) this.hammerTarget = null;
+    }
+  }
+
+  /** Aim at a piece with hammer / axe / pickaxe; R upgrades with the hammer; scrap window ticks down. */
   private updateHammer(dt: number): void {
-    const hammer = this.inventory.equippedTool?.kind === 'hammer';
-    const target = hammer && this.hasGroundHit ? this.building.pieceAt(this.groundHit.x, this.groundHit.z) : null;
-    if (target !== this.hammerTarget) this.demolishTime = 0;
+    const tool = this.inventory.equippedTool;
+    const scrap = this.isScrapTool(tool?.kind);
+    const target = scrap && this.hasGroundHit ? this.building.pieceAt(this.groundHit.x, this.groundHit.z) : null;
+    if (target !== this.hammerTarget) this.resetDemolish();
     this.hammerTarget = target;
-    if (!this.input.isDown('demolish')) {
-      this.demolishTime = 0;
-      this.demolishArmed = true;
+
+    if (this.demolishHits > 0) {
+      this.demolishWindow -= dt;
+      if (this.demolishWindow <= 0) this.resetDemolish();
     }
+
     if (!target) return;
-    if (this.input.wasPressed('reload')) this.building.upgrade(target);
-    if (this.demolishArmed && this.input.isDown('demolish')) {
-      this.demolishTime += dt;
-      if (this.demolishTime >= CONFIG.building.demolishHoldTime) {
-        this.demolishTime = 0;
-        this.demolishArmed = false;
-        if (this.building.demolish(target)) this.hammerTarget = null;
-      }
-    }
+    if (tool?.kind === 'hammer' && this.input.wasPressed('reload')) this.building.upgrade(target);
   }
 
   private updateBuildMode(): void {
@@ -587,7 +603,6 @@ export class Game {
   private die(cause: string): void {
     if (this.state === 'dead' || this.state === 'title') return;
     this.setBuildMode(false);
-    this.setGunBenchOpen(false);
     this.setMapOpen(false);
     this.pauseScreen.setVisible(false);
     this.state = 'dead';
@@ -822,12 +837,11 @@ export class Game {
       if (this.metaOverlay.open) this.metaOverlay.hide();
       else if (this.mapScreen.open) this.setMapOpen(false);
       else if (this.inventoryView.open) this.setInventoryOpen(false);
-      else if (this.gunBench.isOpen) this.setGunBenchOpen(false);
       else if (this.buildMode.active) this.setBuildMode(false);
       else this.setPaused(this.state === 'playing');
     }
-    if (this.input.wasPressedThisFrame('inventory') && this.state === 'playing' && !this.gunBench.isOpen && !this.mapScreen.open) this.setInventoryOpen(!this.inventoryView.open);
-    if (this.input.wasPressedThisFrame('map') && this.state === 'playing' && !this.gunBench.isOpen) this.setMapOpen(!this.mapScreen.open);
+    if (this.input.wasPressedThisFrame('inventory') && this.state === 'playing' && !this.mapScreen.open) this.setInventoryOpen(!this.inventoryView.open);
+    if (this.input.wasPressedThisFrame('map') && this.state === 'playing') this.setMapOpen(!this.mapScreen.open);
     if (this.input.wasPressedThisFrame('debug')) this.debug.toggle();
     if (this.input.wasPressedThisFrame('help') && this.state === 'playing') this.hud.toggleHelp();
     if (this.input.wasPressedThisFrame('mute')) {
@@ -836,7 +850,7 @@ export class Game {
       events.emit('toast', { text: muted ? 'SOUND OFF. N to bring it back.' : 'SOUND ON.', tone: 'info' });
     }
 
-    const playing = this.state === 'playing' && !this.inventoryView.open && !this.gunBench.isOpen && !this.mapScreen.open;
+    const playing = this.state === 'playing' && !this.inventoryView.open && !this.mapScreen.open;
     const dt = this.state === 'paused' ? 0 : frameDt * this.loop.timeScale;
     const p = this.player;
 
@@ -1020,10 +1034,10 @@ export class Game {
     const boss = this.horde.boss;
     this.hud.setBoss(boss ? boss.def.name : null, boss ? boss.hp / boss.maxHp : 0, !!boss && boss.hp < boss.maxHp * 0.3);
 
-    this.hud.setHealth(p.health, CONFIG.player.maxHealth);
-    this.hud.setHunger(p.hunger, CONFIG.survival.maxHunger);
+    this.hud.setHealth(p.health, CONFIG.player.maxHealth, p.healthMax);
     this.hud.setFilter(p.filter, CONFIG.player.maxFilter);
-    this.hud.setStamina(p.stamina, CONFIG.player.stamina.max, p.exhausted);
+    this.hud.setStamina(p.stamina, CONFIG.player.stamina.max, p.staminaMax, p.exhausted);
+    this.hud.setBuff(p.buff);
     this.hud.setGas(this.survival.gas, p.filter <= 0, this.survival.inToxicWater && this.survival.air < this.survival.gas);
     const job = this.crafting.queue[0];
     this.hud.setCraft(job ? (this.icons[job.recipe.output] ?? null) : null, this.crafting.progress, this.crafting.queue.length, !!job?.blocked);
@@ -1057,7 +1071,6 @@ export class Game {
       this.shooting.jammed,
       this.shooting.reloading ? this.shooting.reloadT / Math.max(0.2, gs?.reloadTime ?? 1) : 0,
     );
-    this.gunBench.update(dt);
     const it = playing ? this.currentInteractable : null;
     this.hud.setPrompt(it ? it.verb : null, it?.label);
 
@@ -1066,7 +1079,9 @@ export class Game {
     const bm = this.buildMode;
     this.buildUI.setBuild(playing && bm.active, bm.tab, bm.selected, bm.placement, this.input.mouseScreen.x, this.input.mouseScreen.y);
     const card = playing && !bm.active && this.hammerTarget && this.building.pieces.has(this.hammerTarget) ? this.hammerTarget : null;
-    this.buildUI.setPieceCard(card, this.demolishTime / CONFIG.building.demolishHoldTime);
+    const needed = CONFIG.building.demolishHits;
+    const scrapProgress = this.demolishHits > 0 ? this.demolishHits / needed : 0;
+    this.buildUI.setPieceCard(card, scrapProgress, this.inventory.equippedTool?.kind ?? null);
     this.rig.groundForward(this.camForward);
     this.minimap.update(dt, this.renderPos, facing, this.camForward);
     this.mapScreen.update(this.renderPos, facing, this.camForward);
@@ -1091,7 +1106,7 @@ export class Game {
         district: `${this.world.regions.districtAt(p.position.x, p.position.z).district} · road ${this.world.regions.clearance(p.position.x, p.position.z, 12).toFixed(1)} m`,
         reach: this.reachNote,
         gas: this.survival.gas.toFixed(2),
-        hunger: p.hunger.toFixed(1),
+        buff: p.buff ? `${p.buff.def.label} ${p.buff.remaining.toFixed(1)}s` : 'none',
         chunks: `${this.world.loadedChunks} loaded, ${this.world.groundTiles} ground, ${this.world.cachedPlans} plans, ${this.world.changes.chunkCount} changed`,
         threat: `${Math.round(this.world.sample(p.position.x, p.position.z).danger * 100)}% at ${Math.round(Math.hypot(p.position.x, p.position.z))}m`,
         nodes: this.world.nodes.size,

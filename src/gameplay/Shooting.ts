@@ -101,7 +101,10 @@ export class Shooting {
 
     if (this.reloading) {
       this.reloadT += dt;
-      if (this.reloadT >= (this.jammed ? CONFIG.combat.jamClearTime : stats.reloadTime)) {
+      const reloadNeed = this.jammed
+        ? CONFIG.combat.jamClearTime
+        : stats.reloadTime / Math.max(0.5, this.player.buff?.def.reload ?? 1);
+      if (this.reloadT >= reloadNeed) {
         if (this.jammed) {
           this.jammed = false;
           this.reloading = false;
@@ -198,7 +201,9 @@ export class Shooting {
 
     const p = this.player;
     const facing = p.facing;
-    const spread = (stats.spread * (aiming ? CONFIG.combat.aimSpread : 1) + this.heat * stats.recoil * 0.15) * (Math.PI / 180);
+    const aimMul = aiming ? CONFIG.combat.aimSpread : 1;
+    const stability = Math.max(0.4, this.player.buff?.def.aim ?? 1);
+    const spread = ((stats.spread * aimMul + this.heat * stats.recoil * 0.15) / stability) * (Math.PI / 180);
     const muzzle = 0.85;
     const sx = p.position.x + Math.sin(facing) * muzzle;
     const sy = p.position.y + 1.15;
