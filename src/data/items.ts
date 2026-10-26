@@ -9,10 +9,39 @@ export interface ToolStats {
   swingTime: number;
 }
 
+/** Timed food boost. Eating another food replaces the current one. */
+export interface FoodBuffDef {
+  /** Seconds the boost lasts. */
+  duration: number;
+  /** Short chip title, e.g. BEANS. */
+  label: string;
+  /** Effect lines shown on the HUD chip. */
+  effects: readonly string[];
+  /** Move speed multiplier. */
+  moveSpeed?: number;
+  /** Stamina regen multiplier. */
+  staminaRegen?: number;
+  /** Max stamina multiplier (bar extends). */
+  staminaMax?: number;
+  /** Melee / tool impact multiplier. */
+  melee?: number;
+  /** Max health multiplier (bar extends). */
+  maxHealth?: number;
+  /** Health restored per second while the buff is active. */
+  healPerSecond?: number;
+  /** 0..1 fraction of gas filter drain ignored. */
+  filterResist?: number;
+  /** Reload speed multiplier (higher = faster). */
+  reload?: number;
+  /** Aim stability multiplier (higher = tighter spread). */
+  aim?: number;
+}
+
 export interface ConsumableStats {
   filter?: number;
   heal?: number;
-  hunger?: number;
+  /** Timed combat / survival boost from food. */
+  buff?: FoodBuffDef;
   /** Shown when used. */
   message: string;
 }
@@ -47,18 +76,52 @@ export const ITEMS = {
 
   cannedBeans: {
     id: 'cannedBeans', name: 'Canned Beans', kind: 'food', stack: 10, model: 'item.cannedBeans', color: '#ffb35a',
-    description: 'Dented, but sealed. Probably fine.',
-    consumable: { hunger: 25, heal: 5, message: 'Cold beans. Still the best thing you have eaten this week.' },
+    description: 'Dented, but sealed. A quick 22s kick of speed and stamina.',
+    consumable: {
+      heal: 5,
+      message: 'Cold beans. Legs feel lighter already.',
+      buff: {
+        duration: 22,
+        label: 'BEANS',
+        effects: ['SPEED +12%', 'STAMINA REGEN +30%'],
+        moveSpeed: 1.12,
+        staminaRegen: 1.3,
+      },
+    },
   },
   mutantMeat: {
     id: 'mutantMeat', name: 'Raw Mutant Meat', kind: 'food', stack: 10, model: 'item.mutantMeat', color: '#e57a7a',
-    description: 'Do not eat this raw. Cook it in the Oven.',
-    consumable: { hunger: 10, heal: -12, message: 'That was a mistake.' },
+    description: 'Raw is a bad idea — unless you want a short, nasty rage boost. Cook it in the Oven.',
+    consumable: {
+      heal: -12,
+      message: 'It burns going down. Everything else burns with it.',
+      buff: {
+        duration: 20,
+        label: 'RAW RAGE',
+        effects: ['MELEE +45%', 'SPEED +18%', 'STAMINA MAX +20%'],
+        melee: 1.45,
+        moveSpeed: 1.18,
+        staminaMax: 1.2,
+      },
+    },
   },
   cookedMeat: {
     id: 'cookedMeat', name: 'Cooked Mutant Meat', kind: 'food', stack: 10, model: 'item.cookedMeat', color: '#d9893f',
-    description: 'Charred until it stopped twitching. Filling.',
-    consumable: { hunger: 40, heal: 10, message: 'Tastes like smoke and regret. Fills you up, though.' },
+    description: 'Charred until it stopped twitching. Thirty seconds of tough, focused fighting.',
+    consumable: {
+      heal: 10,
+      message: 'Tastes like smoke and regret. You feel solid.',
+      buff: {
+        duration: 30,
+        label: 'COOKED',
+        effects: ['MAX HP +25%', 'REGEN', 'FILTER +35%', 'RELOAD +20%', 'AIM +25%'],
+        maxHealth: 1.25,
+        healPerSecond: 2,
+        filterResist: 0.35,
+        reload: 1.2,
+        aim: 1.25,
+      },
+    },
   },
   medkit: {
     id: 'medkit', name: 'Field Medkit', kind: 'consumable', stack: 5, model: 'item.medkit', color: '#ff6a5a',
@@ -78,12 +141,12 @@ export const ITEMS = {
 
   rustyHatchet: {
     id: 'rustyHatchet', name: 'Rusty Hatchet', kind: 'tool', stack: 1, model: 'item.rustyHatchet', color: '#c99a62',
-    description: 'Chops dead trees fast. Bad at everything else.',
+    description: 'Chops dead trees fast. Five hits will also scrap your own builds for partial salvage.',
     tool: { kind: 'axe', tier: 1, power: 22, swingTime: 0.6 },
   },
   rustyPickaxe: {
     id: 'rustyPickaxe', name: 'Rusty Pickaxe', kind: 'tool', stack: 1, model: 'item.rustyPickaxe', color: '#c4c1b8',
-    description: 'Breaks rock, rubble and scrap.',
+    description: 'Breaks rock, rubble and scrap. Five hits scraps your own builds for partial salvage.',
     tool: { kind: 'pickaxe', tier: 1, power: 22, swingTime: 0.7 },
   },
   crowbar: {
@@ -93,17 +156,17 @@ export const ITEMS = {
   },
   hammer: {
     id: 'hammer', name: 'Claw Hammer', kind: 'tool', stack: 1, model: 'item.hammer', color: '#f2b705',
-    description: 'Swing at your own walls to repair them. R upgrades a piece, hold X to tear it down. Useless on anything else.',
+    description: 'Swing at damaged pieces to repair them. At full HP, five hits scraps them for half the materials. R upgrades. Axe and pickaxe also scrap builds.',
     tool: { kind: 'hammer', tier: 1, power: 16, swingTime: 0.55 },
   },
   salvagedAxe: {
     id: 'salvagedAxe', name: 'Salvaged Axe', kind: 'tool', stack: 1, model: 'item.salvagedAxe', color: '#b9c2c4',
-    description: 'A real blade, riveted from oven-pressed plate. Fells trees in half the swings.',
+    description: 'A real blade, riveted from oven-pressed plate. Fells trees fast — and five hits will scrap your own walls for partial salvage.',
     tool: { kind: 'axe', tier: 2, power: 40, swingTime: 0.62 },
   },
   salvagedPickaxe: {
     id: 'salvagedPickaxe', name: 'Salvaged Pickaxe', kind: 'tool', stack: 1, model: 'item.salvagedPickaxe', color: '#b9c2c4',
-    description: 'Heavy plate head on a pipe handle. Chews through rock and wrecks.',
+    description: 'Heavy plate head on a pipe handle. Chews through rock, wrecks, and your own builds (five hits to scrap).',
     tool: { kind: 'pickaxe', tier: 2, power: 40, swingTime: 0.72 },
   },
 
@@ -138,8 +201,8 @@ export const ITEMS = {
     description: 'Hand-rolled brass and black powder. Feeds any gun you bolt together.',
   },
   craftedGun: {
-    id: 'craftedGun', name: 'Assembled Gun', kind: 'gun', stack: 1, model: 'item.craftedGun', color: '#f2b705',
-    description: 'A gun you built. The parts stay where you put them.',
+    id: 'craftedGun', name: 'Stock Gun', kind: 'gun', stack: 1, model: 'item.craftedGun', color: '#f2b705',
+    description: 'A working gun. Drag a gun part onto it in your backpack to swap or mount a mod.',
   },
 } as const satisfies Record<string, ItemDef>;
 

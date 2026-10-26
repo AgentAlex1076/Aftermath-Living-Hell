@@ -166,12 +166,9 @@ export const STARTER_SUPPLIES: readonly ItemAmount[] = [
   { item: 'mutantMeat', qty: 2 },
   { item: 'wood', qty: 12 },
   { item: 'cloth', qty: 8 },
-  { item: 'rustedReceiver', qty: 1 },
-  { item: 'rustedBarrel', qty: 1 },
-  { item: 'woodGrip', qty: 1 },
-  { item: 'rustedTrigger', qty: 1 },
-  { item: 'stickMag', qty: 1 },
-  { item: 'ammo', qty: 24 },
+  { item: 'ironSight', qty: 1 },
+  { item: 'compensator', qty: 1 },
+  { item: 'ammo', qty: 36 },
 ];
 
 /** Rolls loot; `danger` (1 at 100% threat, uncapped) adds extra rolls and bigger stacks deeper in the wasteland. */

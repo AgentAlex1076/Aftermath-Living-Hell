@@ -1,4 +1,5 @@
-import { evaluateBuild } from '../data/guns';
+import { evaluateBuild, formatStatDelta, isGunPart, planGunMod } from '../data/guns';
+import { gunPower } from '../data/score';
 import { ITEMS, type ItemDef } from '../data/items';
 import type { Inventory, Stack } from '../gameplay/Inventory';
 import { events } from '../core/EventBus';
@@ -8,7 +9,8 @@ import { stackIcon } from './IconRenderer';
 type Icons = Record<string, string>;
 
 function fillSlot(node: HTMLElement, stack: Stack | null, icons: Icons): void {
-  const key = stack ? `${stack.item}:${stack.qty}:${stack.gun?.id ?? ''}:${stack.gun?.loaded ?? ''}` : '';
+  const parts = stack?.gun?.parts.map((p) => p.part).join(',') ?? '';
+  const key = stack ? `${stack.item}:${stack.qty}:${stack.gun?.id ?? ''}:${stack.gun?.loaded ?? ''}:${parts}` : '';
   if (node.dataset.key === key) return;
   node.dataset.key = key;
   node.classList.toggle('empty', !stack);
@@ -32,10 +34,16 @@ function describe(def: ItemDef, stack?: Stack | null): string {
     lines.push(`<span class="tt-stat">${s.fireMode.toUpperCase()} · ${Math.round(s.damage)} DMG · ${s.magSize} MAG</span>`);
     lines.push(`<span class="tt-stat">${stack.gun.loaded}/${s.magSize} LOADED</span>`);
   }
-  if (def.tool?.kind === 'hammer') lines.push('<span class="tt-stat">REPAIR · UPGRADE · DEMOLISH</span>');
+  if (def.tool?.kind === 'hammer') lines.push('<span class="tt-stat">REPAIR · UPGRADE · 5× SCRAP</span>');
+  if (def.tool?.kind === 'axe' || def.tool?.kind === 'pickaxe') lines.push('<span class="tt-stat">GATHER · 5× SCRAP BUILDS</span>');
   else if (def.tool) lines.push(`<span class="tt-stat">${def.tool.kind.toUpperCase()} · POWER ${def.tool.power} · ${(1 / def.tool.swingTime).toFixed(1)} SWINGS/S</span>`);
   if (def.consumable?.heal) lines.push(`<span class="tt-stat">${def.consumable.heal > 0 ? '+' : ''}${def.consumable.heal} HEALTH</span>`);
   if (def.consumable?.filter) lines.push(`<span class="tt-stat">+${def.consumable.filter} FILTER</span>`);
+  if (def.consumable?.buff) {
+    const b = def.consumable.buff;
+    lines.push(`<span class="tt-stat">${b.label} · ${b.duration}s</span>`);
+    lines.push(`<span class="tt-stat">${b.effects.join(' · ')}</span>`);
+  }
   return lines.join('');
 }
 
@@ -115,6 +123,7 @@ export class InventoryView {
     private readonly onUse: (index: number) => void,
   ) {
     this.root = el('div', 'inventory');
+    this.root.dataset.uiCapture = '';
     this.root.innerHTML = `
       <div class="inv-layout">
         <div class="inv-panel">
@@ -209,7 +218,7 @@ export class InventoryView {
   private updateHint(): void {
     this.hint.textContent = this.container
       ? 'DRAG BETWEEN BAGS · SHIFT- OR RIGHT-CLICK TO SEND ACROSS'
-      : 'DRAG TO MOVE · SHIFT-CLICK TO SWAP ROWS · RIGHT-CLICK TO USE';
+      : 'DRAG TO MOVE · DROP A PART ON A GUN TO MOD · SHIFT-CLICK HOTBAR · RIGHT-CLICK USE';
   }
 
   private refresh(): void {
@@ -270,7 +279,7 @@ export class InventoryView {
     }
     const def: ItemDef = ITEMS[st.item];
     const title = st.gun ? st.gun.name.toUpperCase() : def.name.toUpperCase();
-    this.tooltip.innerHTML = `<div class="tt-name" style="--c:${def.color}">${title}</div><div class="tt-kind">${st.gun ? 'assembled gun' : def.kind}</div>${describe(def, st)}<p>${def.description}</p>`;
+    this.tooltip.innerHTML = `<div class="tt-name" style="--c:${def.color}">${title}</div><div class="tt-kind">${st.gun ? 'gun · drag parts onto it to mod' : def.kind}</div>${describe(def, st)}<p>${def.description}</p>`;
     const r = node.getBoundingClientRect();
     const right = r.right + 12 + 270 < window.innerWidth;
     this.tooltip.style.left = right ? `${r.right + 12}px` : `${r.left - 12 - 270}px`;
@@ -295,7 +304,9 @@ export class InventoryView {
   };
 
   private onPointerMove = (e: PointerEvent): void => {
-    if (this.dragFrom) this.moveGhost(e);
+    if (!this.dragFrom) return;
+    this.moveGhost(e);
+    this.showModPreview(this.dragFrom, this.slotAt(document.elementFromPoint(e.clientX, e.clientY)));
   };
 
   private onPointerUp = (e: PointerEvent): void => {
@@ -304,8 +315,36 @@ export class InventoryView {
     const to = this.slotAt(document.elementFromPoint(e.clientX, e.clientY));
     this.cancelDrag();
     if (!to) return;
-    if (to.inv === from.inv) from.inv.move(from.i, to.i);
-    else if (!this.allowedInto(to.inv, from.inv.slots[from.i])) {
+
+    // Part → gun in the same bag: mount / upgrade-swap instead of swapping stacks.
+    if (to.inv === from.inv) {
+      const mod = from.inv.tryModGun(from.i, to.i);
+      if (mod.handled) {
+        if (!mod.ok) events.emit('toast', { text: mod.reason || "That part won't fit.", tone: 'warn' });
+        else {
+          events.emit('toast', {
+            text: mod.buff ? `Mod fitted · ${mod.buff}` : 'Mod fitted.',
+            tone: 'toxic',
+          });
+          const g = to.inv.slots[to.i]?.gun;
+          if (g) {
+            const built = evaluateBuild(g.parts);
+            events.emit('gun:assembled', {
+              name: g.name,
+              parts: g.parts.length,
+              damage: built.stats.damage,
+              mode: built.stats.fireMode,
+              power: gunPower(built.stats),
+            });
+          }
+        }
+        return;
+      }
+      from.inv.move(from.i, to.i);
+      return;
+    }
+
+    if (!this.allowedInto(to.inv, from.inv.slots[from.i])) {
       events.emit('toast', { text: 'That does not go in here.', tone: 'warn' });
     } else from.inv.transfer(from.i, to.inv, to.i);
   };
@@ -314,9 +353,36 @@ export class InventoryView {
     if (this.dragFrom) this.nodeOf(this.dragFrom)?.classList.remove('dragging');
     this.dragFrom = null;
     this.ghost.classList.remove('on');
+    this.tooltip.classList.remove('on');
   }
 
   private moveGhost(e: PointerEvent): void {
     this.ghost.style.transform = `translate(${e.clientX - 32}px, ${e.clientY - 32}px)`;
+  }
+
+  /** While dragging a part over a gun, show whether it fits and the projected stat buff. */
+  private showModPreview(from: SlotRef, to: SlotRef | null): void {
+    const part = from.inv.slots[from.i];
+    const gun = to && to.inv === from.inv && to.i !== from.i ? to.inv.slots[to.i] : null;
+    const node = to ? this.nodeOf(to) : undefined;
+    if (!part || !gun?.gun || !node || !isGunPart(part.item)) {
+      this.tooltip.classList.remove('on');
+      return;
+    }
+
+    const plan = planGunMod(gun.gun, part.item);
+    const partDef = ITEMS[part.item] as ItemDef;
+    const buff = plan.ok ? formatStatDelta(plan.before, plan.after) : '';
+    const status = plan.ok
+      ? `<span class="tt-stat tt-buff">${buff || 'NO STAT CHANGE'}</span>`
+      : `<span class="tt-stat tt-bad">${plan.reason}</span>`;
+    this.tooltip.innerHTML =
+      `<div class="tt-name" style="--c:${partDef.color}">${partDef.name.toUpperCase()}</div>` +
+      `<div class="tt-kind">onto ${gun.gun.name.toUpperCase()}</div>${status}`;
+    const r = node.getBoundingClientRect();
+    const right = r.right + 12 + 270 < window.innerWidth;
+    this.tooltip.style.left = right ? `${r.right + 12}px` : `${r.left - 12 - 270}px`;
+    this.tooltip.style.top = `${r.top}px`;
+    this.tooltip.classList.add('on');
   }
 }

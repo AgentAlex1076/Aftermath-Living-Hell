@@ -49,6 +49,15 @@ export const RARITY_COLOR: Record<Rarity, string> = {
   lab: '#8cff3a',
 };
 
+/** Higher = better. Same-category swaps only allow a strictly higher tier. */
+export const RARITY_TIER: Record<Rarity, number> = {
+  rusted: 1,
+  standard: 2,
+  military: 3,
+  prototype: 4,
+  lab: 5,
+};
+
 /** Combat numbers for a finished (or in-progress) build. */
 export interface GunStats {
   damage: number;
@@ -381,20 +390,212 @@ function clampStat(v: number, min: number, max: number): number {
  * Placement rules live here so new parts only need data. Barrels in a row
  * stretch the gun; barrels stacked fire together; triggers pick the fire mode.
  */
-/** A working rusted pistol for debug kits and a first turret. */
-export function makePipePistol(): GunInstance {
-  return {
-    id: (Math.random() * 1e9) | 0,
+/** Stock layouts — complete working guns. Cool parts are dragged on in the backpack. */
+const STOCK = {
+  pipePistol: {
     name: 'PIPE PISTOL',
-    loaded: 10,
     parts: [
-      { uid: 1, part: 'rustedReceiver', x: 4, y: 2 },
-      { uid: 2, part: 'rustedBarrel', x: 7, y: 2 },
-      { uid: 3, part: 'woodGrip', x: 4, y: 0 },
-      { uid: 4, part: 'rustedTrigger', x: 5, y: 1 },
-      { uid: 5, part: 'stickMag', x: 3, y: 2 },
+      { part: 'rustedReceiver', x: 4, y: 2 },
+      { part: 'rustedBarrel', x: 7, y: 2 },
+      { part: 'woodGrip', x: 4, y: 0 },
+      { part: 'rustedTrigger', x: 5, y: 1 },
+      { part: 'stickMag', x: 3, y: 2 },
     ],
-  };
+  },
+  scrapRifle: {
+    name: 'SCRAP RIFLE',
+    parts: [
+      { part: 'rustedReceiver', x: 3, y: 2 },
+      { part: 'longBarrel', x: 6, y: 2 },
+      { part: 'woodStock', x: 0, y: 2 },
+      { part: 'woodGrip', x: 3, y: 0 },
+      { part: 'rustedTrigger', x: 4, y: 1 },
+      { part: 'stickMag', x: 2, y: 2 },
+      { part: 'ironSight', x: 4, y: 4 },
+    ],
+  },
+} as const;
+
+export type StockGunId = keyof typeof STOCK;
+
+export function makeStockGun(id: StockGunId): GunInstance {
+  const s = STOCK[id];
+  return makeGun(
+    s.parts.map((p, i) => ({ uid: i + 1, part: p.part, x: p.x, y: p.y })),
+    s.name,
+  );
+}
+
+/** A working rusted pistol for the starter kit and turrets. */
+export function makePipePistol(): GunInstance {
+  return makeStockGun('pipePistol');
+}
+
+export interface GunModResult {
+  ok: boolean;
+  reason: string;
+  /** Parts pulled off the gun and returned to the bag (swaps / ejected muzzles). */
+  returned: string[];
+  before: GunStats;
+  after: GunStats;
+}
+
+export interface GunModPlan {
+  ok: boolean;
+  reason: string;
+  returned: string[];
+  working: PlacedPart[] | null;
+  before: GunStats;
+  after: GunStats;
+}
+
+const STAT_DELTA_KEYS: { key: keyof GunStats; label: string; digits?: number }[] = [
+  { key: 'damage', label: 'DMG', digits: 0 },
+  { key: 'fireRate', label: 'ROF', digits: 1 },
+  { key: 'magSize', label: 'MAG', digits: 0 },
+  { key: 'range', label: 'RANGE', digits: 0 },
+  { key: 'spread', label: 'SPREAD', digits: 1 },
+  { key: 'recoil', label: 'RECOIL', digits: 1 },
+  { key: 'handling', label: 'HANDLING', digits: 0 },
+  { key: 'sway', label: 'SWAY', digits: 1 },
+  { key: 'velocity', label: 'VEL', digits: 0 },
+  { key: 'reloadTime', label: 'RELOAD', digits: 1 },
+  { key: 'weight', label: 'WT', digits: 1 },
+];
+
+/** Compact signed deltas between two evaluated gun builds (skips zeros). */
+export function formatStatDelta(before: GunStats, after: GunStats, max = 5): string {
+  const bits: string[] = [];
+  if (before.fireMode !== after.fireMode) bits.push(after.fireMode.toUpperCase());
+  for (const { key, label, digits = 0 } of STAT_DELTA_KEYS) {
+    const d = (after[key] as number) - (before[key] as number);
+    if (Math.abs(d) < 0.05) continue;
+    const n = digits === 0 ? Math.round(d) : Number(d.toFixed(digits));
+    if (n === 0) continue;
+    bits.push(`${n > 0 ? '+' : ''}${n} ${label}`);
+    if (bits.length >= max) break;
+  }
+  return bits.join(' · ');
+}
+
+/**
+ * Dry-run a part onto a gun: new categories mount; same category only if the part is a
+ * higher rarity tier. Does not mutate `gun`.
+ */
+export function planGunMod(gun: GunInstance, partId: string): GunModPlan {
+  const before = evaluateBuild(gun.parts).stats;
+  const empty: GunModPlan = { ok: false, reason: '', returned: [], working: null, before, after: before };
+  const def = gunPart(partId);
+  if (!def) return { ...empty, reason: 'UNKNOWN PART' };
+
+  const working = gun.parts.map((p) => ({ ...p }));
+  const existingIdx = working.findIndex((p) => gunPart(p.part)?.category === def.category);
+  const returned: string[] = [];
+
+  if (existingIdx >= 0) {
+    const old = working[existingIdx]!;
+    const oldDef = gunPart(old.part);
+    if (!oldDef) return { ...empty, reason: 'UNKNOWN PART' };
+    if (old.part === partId) return { ...empty, reason: 'ALREADY FITTED' };
+    if (RARITY_TIER[def.rarity] <= RARITY_TIER[oldDef.rarity]) {
+      return { ...empty, reason: `NEED A BETTER ${CATEGORY_LABEL[def.category]}` };
+    }
+    returned.push(old.part);
+    const oldX = old.x;
+    const oldY = old.y;
+    working.splice(existingIdx, 1);
+
+    // Longer/shorter barrels invalidate muzzle devices that sat on the old tip.
+    if (def.category === 'barrel') {
+      for (let i = working.length - 1; i >= 0; i--) {
+        if (gunPart(working[i]!.part)?.category === 'muzzle') {
+          returned.push(working[i]!.part);
+          working.splice(i, 1);
+        }
+      }
+    }
+
+    if (canPlace(working, partId, oldX, oldY).ok) {
+      working.push({ uid: -3, part: partId, x: oldX, y: oldY });
+    } else {
+      const spot = findModSpot(working, partId);
+      if (!spot) return { ...empty, reason: 'NO ROOM ON THIS GUN' };
+      working.push({ uid: -3, part: partId, x: spot.x, y: spot.y });
+    }
+  } else {
+    const spot = findModSpot(working, partId);
+    if (!spot) return { ...empty, reason: 'NO ROOM ON THIS GUN' };
+    working.push({ uid: -3, part: partId, x: spot.x, y: spot.y });
+  }
+
+  const ev = evaluateBuild(working);
+  if (!ev.ok) return { ...empty, reason: ev.reason || "WON'T FIT" };
+
+  return { ok: true, reason: '', returned, working, before, after: ev.stats };
+}
+
+/**
+ * Fits a gun part onto a stock weapon: mounts a new category, or swaps only if the part
+ * is a rarity upgrade. Mutates `gun` on success.
+ */
+export function applyGunMod(gun: GunInstance, partId: string): GunModResult {
+  const plan = planGunMod(gun, partId);
+  if (!plan.ok || !plan.working) {
+    return { ok: false, reason: plan.reason, returned: [], before: plan.before, after: plan.after };
+  }
+
+  gun.parts = plan.working.map((p) => (p.uid < 0 ? { ...p, uid: nextPartUid() } : p));
+  const mag = Math.max(1, Math.floor(plan.after.magSize));
+  gun.loaded = Math.min(gun.loaded, mag);
+  return { ok: true, reason: '', returned: plan.returned, before: plan.before, after: plan.after };
+}
+
+/** Preferred anchors for optional parts relative to the receiver, then a full-grid scan. */
+function findModSpot(parts: PlacedPart[], partId: string): { x: number; y: number } | null {
+  const def = gunPart(partId);
+  const recv = parts.find((p) => gunPart(p.part)?.category === 'receiver');
+  if (!def || !recv) return null;
+
+  const candidates: { x: number; y: number }[] = [];
+  switch (def.category) {
+    case 'sight':
+      candidates.push({ x: recv.x, y: recv.y + (gunPart(recv.part)?.h ?? 2) }, { x: recv.x + 1, y: recv.y + 2 });
+      break;
+    case 'muzzle': {
+      const barrels = parts.filter((p) => gunPart(p.part)?.category === 'barrel');
+      for (const b of barrels) {
+        const bd = gunPart(b.part);
+        if (bd) candidates.push({ x: b.x + bd.w, y: b.y });
+      }
+      break;
+    }
+    case 'underbarrel': {
+      const barrels = parts.filter((p) => gunPart(p.part)?.category === 'barrel');
+      for (const b of barrels) candidates.push({ x: b.x, y: Math.max(0, b.y - def.h) });
+      break;
+    }
+    case 'stock':
+      candidates.push({ x: Math.max(0, recv.x - def.w), y: recv.y });
+      break;
+    case 'handle':
+      candidates.push({ x: recv.x + 1, y: recv.y });
+      break;
+    case 'converter':
+      candidates.push({ x: recv.x - 1, y: recv.y }, { x: recv.x, y: recv.y - 1 });
+      break;
+    default:
+      candidates.push({ x: recv.x + 1, y: recv.y }, { x: recv.x, y: recv.y - 1 });
+  }
+
+  for (const c of candidates) {
+    if (canPlace(parts, partId, c.x, c.y).ok) return c;
+  }
+  for (let y = 0; y < GUN_GRID.rows; y++) {
+    for (let x = 0; x < GUN_GRID.cols; x++) {
+      if (canPlace(parts, partId, x, y).ok) return { x, y };
+    }
+  }
+  return null;
 }
 
 export function evaluateBuild(parts: readonly PlacedPart[]): BuildEval {

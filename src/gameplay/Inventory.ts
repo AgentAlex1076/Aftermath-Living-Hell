@@ -1,5 +1,5 @@
 import { CONFIG } from '../data/config';
-import type { GunInstance } from '../data/guns';
+import { applyGunMod, formatStatDelta, isGunPart, type GunInstance } from '../data/guns';
 import { ITEMS, type ItemDef, type ItemId, type ToolKind, type ToolStats } from '../data/items';
 
 export interface Stack {
@@ -44,6 +44,7 @@ export class Inventory {
   }
 
   get selectedStack(): Stack | null {
+    if (this.selected < 0 || this.selected >= this.size) return null;
     return this.slots[this.selected];
   }
 
@@ -58,9 +59,10 @@ export class Inventory {
     return this.selectedStack?.gun ?? null;
   }
 
+  /** Select a hotbar slot, or unequip (bare hands) if that slot is already selected. */
   select(i: number): void {
-    if (i < 0 || i >= this.hotbarSize || i === this.selected) return;
-    this.selected = i;
+    if (i < 0 || i >= this.hotbarSize) return;
+    this.selected = this.selected === i ? -1 : i;
     this.changed();
   }
 
@@ -144,6 +146,31 @@ export class Inventory {
     s.qty -= qty;
     if (s.qty <= 0) this.slots[i] = null;
     this.changed();
+  }
+
+  /**
+   * Drag a gun part onto a gun stack: mounts a new category, or swaps only on rarity upgrade.
+   * Returns handled=false if the drop was not a part→gun mod (caller should fall back to move/swap).
+   */
+  tryModGun(partSlot: number, gunSlot: number): { handled: boolean; ok: boolean; reason: string; buff: string } {
+    const part = this.slots[partSlot];
+    const gun = this.slots[gunSlot];
+    if (!part || !gun?.gun || !isGunPart(part.item)) {
+      return { handled: false, ok: false, reason: '', buff: '' };
+    }
+
+    const result = applyGunMod(gun.gun, part.item);
+    if (!result.ok) return { handled: true, ok: false, reason: result.reason, buff: '' };
+
+    this.removeAt(partSlot, 1);
+    for (const id of result.returned) this.add(id as ItemId, 1);
+    this.notify();
+    return {
+      handled: true,
+      ok: true,
+      reason: '',
+      buff: formatStatDelta(result.before, result.after),
+    };
   }
 
   /** Drag and drop: merges matching stacks, otherwise swaps. */

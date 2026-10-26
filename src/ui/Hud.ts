@@ -1,5 +1,6 @@
 import { events, type ToastTone } from '../core/EventBus';
 import { bossFor, ENEMIES } from '../data/enemies';
+import type { ActiveBuff } from '../gameplay/Buffs';
 import { el, q } from './dom';
 
 const TOAST_LIFETIME_MS = 3200;
@@ -13,8 +14,8 @@ export class Hud {
   private readonly healthValue: HTMLElement;
   private readonly staminaBar: HTMLElement;
   private readonly staminaValue: HTMLElement;
-  private readonly hungerBar: HTMLElement;
-  private readonly hungerValue: HTMLElement;
+  private readonly buffChip: HTMLElement;
+  private lastBuffKey = '';
   private readonly craftChip: HTMLElement;
   private readonly ovenChip: HTMLElement;
   private lastCraftKey = '';
@@ -81,16 +82,20 @@ export class Hud {
       </div>
       <div class="raid-splash"></div>
       <div class="player-card">
+        <div class="buff-chip" hidden>
+          <span class="buff-label"></span>
+          <span class="buff-effects"></span>
+          <span class="buff-time"></span>
+        </div>
         <div class="bar bar-health">
           <span class="bar-value">100</span>
           <div class="bar-main">
             <div class="bar-head"><span class="card-name">SURVIVOR</span><span class="bar-label">HEALTH</span></div>
-            <div class="bar-track"><div class="bar-fill"></div></div>
+            <div class="bar-track"><div class="bar-fill"></div><i class="bar-cap"></i></div>
           </div>
         </div>
-        <div class="bar short bar-hunger"><span class="bar-label">HUNGER</span><div class="bar-track"><div class="bar-fill"></div></div><span class="bar-value">100</span></div>
-        <div class="bar short bar-filter"><span class="bar-label">FILTER</span><div class="bar-track"><div class="bar-fill"></div></div><span class="bar-value">100</span></div>
-        <div class="bar short bar-stamina"><span class="bar-label">STAMINA</span><div class="bar-track"><div class="bar-fill"></div></div><span class="bar-value">100</span></div>
+        <div class="bar short bar-filter"><span class="bar-label">FILTER</span><div class="bar-track"><div class="bar-fill"></div><i class="bar-cap"></i></div><span class="bar-value">100</span></div>
+        <div class="bar short bar-stamina"><span class="bar-label">STAMINA</span><div class="bar-track"><div class="bar-fill"></div><i class="bar-cap"></i></div><span class="bar-value">100</span></div>
       </div>
       <div class="prompt"><span class="key">E</span><span class="prompt-text"></span></div>
       <div class="ammo-chip">
@@ -117,7 +122,9 @@ export class Hud {
           <kbd>SPACE</kbd><span>Dodge roll</span>
           <kbd>E</kbd><span>Interact / search</span>
           <kbd>B</kbd><span>Build mode · Q switches tabs</span>
-          <kbd>HAMMER</kbd><span>LMB fix · R upgrade · hold X scrap</span>
+          <kbd>HAMMER</kbd><span>LMB fix · R upgrade · 5 hits scrap</span>
+          <kbd>AXE / PICK</kbd><span>5 hits scrap a build (2s window)</span>
+          <kbd>GUN MOD</kbd><span>Drag a part onto a gun in the backpack</span>
           <kbd>WHEEL</kbd><span>Zoom</span>
           <kbd>ESC</kbd><span>Pause</span>
           <kbd>M</kbd><span>Map</span>
@@ -134,8 +141,7 @@ export class Hud {
     this.healthValue = q(this.healthBar, '.bar-value');
     this.staminaBar = q(this.root, '.bar-stamina');
     this.staminaValue = q(this.staminaBar, '.bar-value');
-    this.hungerBar = q(this.root, '.bar-hunger');
-    this.hungerValue = q(this.hungerBar, '.bar-value');
+    this.buffChip = q(this.root, '.buff-chip');
     this.craftChip = q(this.root, '.craft-chip');
     this.ovenChip = q(this.root, '.oven-chip');
     this.filterBar = q(this.root, '.bar-filter');
@@ -230,22 +236,38 @@ export class Hud {
     this.bossFill.style.transform = `scaleX(${Math.max(0, frac).toFixed(3)})`;
   }
 
-  setHealth(value: number, max: number): void {
-    this.healthBar.style.setProperty('--v', String(Math.max(0, value / max)));
-    this.healthValue.textContent = String(Math.ceil(value));
-    this.healthBar.classList.toggle('low', value < max * 0.3);
+  setHealth(value: number, baseMax: number, effectiveMax: number = baseMax): void {
+    this.setBar(this.healthBar, this.healthValue, value, baseMax, effectiveMax);
+    this.healthBar.classList.toggle('low', value < baseMax * 0.3);
   }
 
-  setStamina(value: number, max: number, exhausted: boolean): void {
-    this.staminaBar.style.setProperty('--v', String(Math.max(0, value / max)));
-    this.staminaValue.textContent = String(Math.floor(value));
+  setStamina(value: number, baseMax: number, effectiveMax: number, exhausted: boolean): void {
+    this.setBar(this.staminaBar, this.staminaValue, value, baseMax, effectiveMax);
     this.staminaBar.classList.toggle('exhausted', exhausted);
   }
 
-  setHunger(value: number, max: number): void {
-    this.hungerBar.style.setProperty('--v', String(Math.max(0, value / max)));
-    this.hungerValue.textContent = String(Math.ceil(value));
-    this.hungerBar.classList.toggle('low', value < max * 0.25);
+  setBuff(buff: ActiveBuff | null): void {
+    const key = buff ? `${buff.def.label}|${Math.ceil(buff.remaining)}|${buff.def.effects.join(',')}` : '';
+    if (key !== this.lastBuffKey) {
+      this.lastBuffKey = key;
+      this.buffChip.hidden = !buff;
+      if (buff) {
+        q(this.buffChip, '.buff-label').textContent = buff.def.label;
+        q(this.buffChip, '.buff-effects').textContent = buff.def.effects.join(' · ');
+      }
+    }
+    if (!buff) return;
+    q(this.buffChip, '.buff-time').textContent = `${Math.ceil(buff.remaining)}s`;
+    this.buffChip.style.setProperty('--t', String(Math.max(0, buff.remaining / buff.def.duration)));
+  }
+
+  /** Same track always; a comic ink cap marks where the boost zone starts. */
+  private setBar(bar: HTMLElement, valueEl: HTMLElement, value: number, baseMax: number, effectiveMax: number): void {
+    const boosted = effectiveMax > baseMax + 0.5;
+    bar.style.setProperty('--v', String(Math.max(0, value / effectiveMax)));
+    bar.style.setProperty('--cap', String(baseMax / effectiveMax));
+    bar.classList.toggle('boosted', boosted);
+    valueEl.textContent = String(Math.ceil(value));
   }
 
   /** The item being crafted (icon URL), its progress and how many jobs are queued. */

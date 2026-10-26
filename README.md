@@ -28,14 +28,16 @@ For a Pages-style build locally: `GITHUB_PAGES=true npm run build`.
 | Left mouse (hold) | Fire a gun, melee mutants, swing the held tool / fists, or use a consumable |
 | Right mouse (hold) | Aim (tighter spread, slower move) |
 | R | Reload / clear a jam (or upgrade a piece with the hammer) |
-| 1 – 6 | Select hotbar slot |
+| 1 – 6 | Select hotbar slot (press again to unequip) |
 | I or Tab | Backpack (drag to move, Shift-click to swap rows, right-click to use) |
 | Shift | Sprint (uses stamina) |
 | Space | Dodge roll (uses stamina) |
-| E | Interact / search containers / use the Crafting Table, Oven or Gun Bench / open doors and storage boxes / climb a ladder |
+| E | Interact / search containers / use the Crafting Table or Oven / open doors and storage boxes / climb a ladder |
+| Inventory | Drag a gun part onto a gun to mod it (same category swaps; new categories mount on) |
 | B | Build mode: Q switches Structure / Traps / Power / Utility, 1–7 pick a piece, left mouse places, R rotates, B or Esc exits |
 | E on a turret / generator / trap | Load a crafted gun, ammo, wood or chemicals |
-| Hammer equipped | Left mouse repairs the piece under the cursor, R upgrades it, hold X to demolish |
+| Hammer equipped | Left mouse repairs a damaged piece, R upgrades it; at full HP, 5 hits scraps it for half the materials |
+| Axe / pickaxe | 5 consecutive hits (within 2s of each other) scraps a build for half the materials |
 | Mouse wheel | Zoom camera |
 | Esc | Pause (volume slider and mute are on the pause screen) |
 | M | Full-screen map (drag to pan, wheel to zoom) |
@@ -74,13 +76,13 @@ except what you remember.
   (`Enemy.ts`). Mutant stats and specials (spit, scream, cloak, climb, slam, brood) are data in
   `src/data/enemies.ts`; `Horde.ts` runs them and `MutantFx.ts` draws acid globs and shockwaves.
 - `src/gameplay` — inventory, gathering (swings, yields, searching, consumables, melee),
-  survival (hunger, gas, regen), the crafting queue, the Oven, and base building
+  survival (food buffs, gas, out-of-combat regen), the crafting queue, the Oven, and base building
   (`Building.ts`: placement rules, support and collapse, tiers, hammer actions;
   `BuildMode.ts`: ghost preview and grid). Defenses live in `Defenses.ts` (traps,
   generator power radius, auto-turrets that fire a mounted gun). Pieces, tiers,
   costs and HP live in `src/data/buildables.ts`. Raids live in `Raid.ts` (timer, Home Zone penalty, Wave Director)
-  and `Horde.ts`; pathfinding to the hut is `FlowField.ts`. Guns live in `GunBuild` rules
-  inside `data/guns.ts`, the bench UI in `ui/GunBench.ts`, and firing in `Shooting.ts`.
+  and `Horde.ts`; pathfinding to the hut is `FlowField.ts`. Guns are stock builds in
+  `data/guns.ts` (drag a part onto a gun in the backpack to mod); firing is `Shooting.ts`.
   `Meta.ts` is the localStorage ledger, run history, Codex and score (`data/score.ts`).
 - `src/physics` — ground-plane collision on a spatial hash (circles + boxes).
 - `src/world` — biomes, a 1 m `heightAt` field (`Height.ts`) with hills, terraces (with ramp gaps),

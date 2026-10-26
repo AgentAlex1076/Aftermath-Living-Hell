@@ -311,6 +311,7 @@ body.playing {
 
 .bar-track {
   position: relative;
+  width: 196px;
   height: 14px;
   background: rgba(11, 11, 13, 0.88);
   outline: 2px solid var(--ink);
@@ -322,10 +323,6 @@ body.playing {
 
 .bar-health {
   --plate: var(--blood-deep);
-}
-
-.bar-hunger {
-  --plate: #8a4314;
 }
 
 .bar-filter {
@@ -349,6 +346,7 @@ body.playing {
   inset: 0;
   background: repeating-linear-gradient(90deg, transparent 0 calc(10% - 3px), var(--ink) calc(10% - 3px) 10%);
   pointer-events: none;
+  z-index: 2;
 }
 
 .bar-fill {
@@ -358,6 +356,36 @@ body.playing {
   transform: scaleX(var(--v, 1));
   transition: transform 0.12s linear;
   box-shadow: inset 0 3px 0 rgba(255, 255, 255, 0.28);
+}
+
+/* Boost zone: quiet hatch past the ink cap, still inside the same track. */
+.bar.boosted .bar-track {
+  background:
+    repeating-linear-gradient(
+      -55deg,
+      rgba(11, 11, 13, 0.88) 0 5px,
+      rgba(242, 183, 5, 0.14) 5px 6px
+    )
+    right / calc((1 - var(--cap, 1)) * 100%) 100% no-repeat,
+    rgba(11, 11, 13, 0.88);
+}
+
+.bar-cap {
+  position: absolute;
+  top: -2px;
+  bottom: -2px;
+  left: calc(var(--cap, 1) * 100%);
+  width: 2px;
+  margin-left: -1px;
+  background: var(--hazard);
+  box-shadow: 1px 0 0 var(--ink);
+  opacity: 0;
+  pointer-events: none;
+  z-index: 3;
+}
+
+.bar.boosted .bar-cap {
+  opacity: 1;
 }
 
 .bar.short {
@@ -380,10 +408,6 @@ body.playing {
   background: var(--blood);
 }
 
-.bar-hunger .bar-fill {
-  background: var(--ember);
-}
-
 .bar-filter .bar-fill {
   background: var(--toxic);
 }
@@ -396,15 +420,74 @@ body.playing {
   background: #6e6e6a;
 }
 
-.bar-hunger.low .bar-track,
 .bar-filter.low .bar-track,
 .bar-health.low .bar-track {
   animation: bar-alarm 0.8s steps(2, jump-none) infinite;
 }
 
-.bar-hunger.low .bar-label,
 .bar-filter.low .bar-label {
   color: var(--blood-text);
+}
+
+/* Floats above the health bar so showing/hiding never shoves the vitals. */
+.buff-chip {
+  position: absolute;
+  left: 0;
+  bottom: calc(100% + 10px);
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  max-width: 340px;
+  padding: 5px 12px 5px 10px;
+  font-family: var(--font-ui);
+  color: var(--ink);
+  background: var(--hazard);
+  border-radius: 999px;
+  outline: 2px solid var(--ink);
+  box-shadow: 3px 3px 0 var(--blood);
+  white-space: nowrap;
+}
+
+.buff-chip[hidden] {
+  display: none;
+}
+
+.buff-label {
+  font-style: italic;
+  font-weight: 800;
+  font-size: 13px;
+  letter-spacing: 0.08em;
+}
+
+.buff-effects {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-weight: 700;
+  font-size: 11px;
+  letter-spacing: 0.03em;
+  color: rgba(11, 11, 13, 0.72);
+}
+
+.buff-time {
+  flex: 0 0 auto;
+  min-width: 2.2ch;
+  font-weight: 800;
+  font-size: 13px;
+  text-align: right;
+}
+
+.buff-chip::after {
+  content: '';
+  position: absolute;
+  left: 10px;
+  right: 10px;
+  bottom: 2px;
+  height: 2px;
+  background: var(--ink);
+  transform-origin: left center;
+  transform: scaleX(var(--t, 1));
+  opacity: 0.35;
+  border-radius: 1px;
 }
 
 @keyframes bar-alarm {
@@ -1384,6 +1467,14 @@ body.playing {
   color: #2f5a0e;
 }
 
+.tt-stat.tt-buff {
+  color: var(--toxic, #8cff3a);
+}
+
+.tt-stat.tt-bad {
+  color: var(--hazard, #e3b21b);
+}
+
 .inv-tooltip p {
   margin: 8px 0 0;
   font-size: 13.5px;
@@ -1418,6 +1509,10 @@ body.playing {
   flex-direction: column;
   gap: 14px;
   padding: 18px 18px 18px;
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  min-height: 0;
 }
 
 .side-panel[hidden] {
@@ -1553,8 +1648,17 @@ body.playing {
   display: flex;
   flex-direction: column;
   gap: 6px;
+  flex: 1 1 auto;
+  min-height: 140px;
   overflow-y: auto;
+  overscroll-behavior: contain;
   padding-right: 6px;
+}
+
+.craft-panel > .side-header,
+.craft-panel > .craft-tabs,
+.craft-panel > .queue {
+  flex-shrink: 0;
 }
 
 .recipe {

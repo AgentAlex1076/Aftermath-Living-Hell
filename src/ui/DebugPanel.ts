@@ -28,7 +28,7 @@ export interface DebugActions {
   togglePost: (on: boolean) => void;
   setWeather: (kind: WeatherKind | null) => void;
   lightning: () => void;
-  openGunBench: () => void;
+  giveRifle?: () => void;
   teleportTo: (kind: FeatureKind) => void;
   checkReach: () => void;
   killSelf: () => void;
@@ -100,8 +100,8 @@ export class DebugPanel {
             <button data-a="far">Teleport 90m out</button>
             <button data-a="farther">Teleport 1 km out</button>
             <button data-a="kit">Give kit</button>
-            <button data-a="pipe">Give gun</button>
-            <button data-a="gun">Gun bench</button>
+            <button data-a="pipe">Give pistol</button>
+            <button data-a="rifle">Give rifle</button>
             <button data-a="codex">Unlock Codex</button>
             <button data-a="kill" class="danger">Kill self</button>
           </div>
@@ -173,7 +173,7 @@ export class DebugPanel {
     q(this.root, '[data-a="farther"]').addEventListener('click', actions.teleportFar);
     q(this.root, '[data-a="kit"]').addEventListener('click', actions.giveKit);
     q(this.root, '[data-a="pipe"]').addEventListener('click', actions.giveGun);
-    q(this.root, '[data-a="gun"]').addEventListener('click', actions.openGunBench);
+    q(this.root, '[data-a="rifle"]').addEventListener('click', () => actions.giveRifle?.());
     q(this.root, '[data-a="shake"]').addEventListener('click', actions.shake);
     q(this.root, '[data-a="damageBuilds"]').addEventListener('click', actions.damageBuilds);
     q(this.root, '[data-a="att25"]').addEventListener('click', () => actions.addAttention(25));
