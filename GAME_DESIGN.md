@@ -52,6 +52,9 @@ procedurally generated world, and your goal is a higher score than last time.
 5. Repeat — raids escalate until you die. Death ends the run.
 
 ## Raid timer & home zone (critical rule)
+> Replaced by Horde Pressure (day/night, horde attention, the signal siren) from Phase 11.
+> See "Living World overhaul" below. This section describes builds 0.5–1.0.
+
 - After each raid ends, the next raid timer is set to a RANDOM duration between 1:30 and 5:00.
   The timer is always visible on the HUD.
 - The hut defines a circular HOME ZONE (default radius 30m, shown as a faint hazard ring on
@@ -224,7 +227,7 @@ Multiplayer, controller support, story campaign, mod support, online leaderboard
    and gets a sheen when wet. Gas puffs (bloaters, traps, drums, the Chemist) are now visible, plus
    low ground mist. All audio is synthesized in `src/audio`: guns, hits, mutant voices, building,
    UI, raid sirens and horn, wind, rain, the respirator, and an industrial track during raids.
-   M mutes; volume is on the pause screen. New mutants: Spitter (lobs acid, eats walls), Screamer
+   M mutes (N from build 1.3); volume is on the pause screen. New mutants: Spitter (lobs acid, eats walls), Screamer
    (frenzies the horde, calls more), Stalker (fades out in gas and breathes its own; powered
    floodlights reveal it) and Climber (goes over walls). Boss raids alternate The Chemist and
    Patient Zero (ground slam, splits into crawlers, enrages low), and each boss comes back with
@@ -232,6 +235,144 @@ Multiplayer, controller support, story campaign, mod support, online leaderboard
    Fixed along the way: upright mutants' legs were below the ground, gas clouds never rendered,
    and enemy attacks landed on every tick of their swing instead of once.
    Elite modifiers (armored, toxic, fast) are still unscheduled.
+
+## Living World overhaul (phases 11–20)
+An endless, hilly, real-feeling world with raids you choose to start. Defaults below are tuning
+starting points, not promises.
+
+### Horde Pressure (replaces the raid timer)
+- Day/night: a 24-minute day (1 real second = 1 game minute). Dawn 05:00–07:00, day 07:00–21:00,
+  dusk 21:00–23:00, night 23:00–05:00. Runs start at 07:30. Night is darker, roamers double and get
+  bolder, and attention builds twice as fast. A small helmet lamp keeps the suit readable at night.
+- Horde attention (0–100%): rises slowly on its own (about 14 minutes to fill in daylight at the
+  start, faster with every raid survived) and faster with noise and greed: gunshots (louder guns
+  add more), turret fire, explosions, running generators, prying open lockers. Noise also pulls
+  nearby roamers toward it. Attention only drops when a raid happens: it resets to a floor of 2.5%
+  per raid survived (up to 35%), so raids come closer together over a run.
+  Thresholds: 50% "the horde stirs", 75% "they're gathering", 100% forced raid.
+- Signal siren (outside the hut door): crank it for a 15-second wind-up, then the raid starts.
+  Wave and reward scale from 0.75× (0% attention) to 1.5× (100%); calling at night adds +25% wave
+  and +35% reward. Not during a raid; 60 s cooldown after one.
+- Forced raids: at 100% a HORDE INBOUND return window (2 minutes, 90 s at night) with a compass home.
+  Home in time: normal raid, no call bonus. Not home: the base is attacked without you — defences
+  wear down the wave, the wave damages buildings from its attack side, storage behind breached walls
+  loses 30–60% of its stacks. The hut and stations are indestructible. Come back within ~60 m during
+  the siege and the rest of the wave becomes real. Held = counts as survived, half score, smaller
+  cache. Breached = doesn't count, no cache. No inventory wipe, no teleport.
+- Rewards: score per raid × the call bonus, a salvage cache in the Home Zone scaled by wave size
+  and raid number (boss cache on boss raids), and 1–2 undiscovered landmarks revealed on the map.
+  Rewards are a list of entries so unlocks can be added later.
+
+### Endless world
+- No edges. 32 m chunks stream forever, each with its own ground mesh. Threat rises with distance
+  past 100%. Distance bands: near 0–400 m, mid 300–1,200 m, far 1,000 m+.
+- Far chunk layouts are dropped and regenerated from the seed; only changes (harvested, looted,
+  built, discovered) are kept, with timestamps. Resources do not come back for now; an empty world
+  event system is in place for supply drops and restocks later.
+- Minimap in per-chunk tiles plus a full-screen map on M (mute moves to N).
+
+### Terrain
+- One `heightAt(x, z)`, cached per chunk as a 1 m grid that both the ground mesh and gameplay read.
+- Layers: lowlands (0–6 m), hills (to ~20 m), highland plateaus (20–45 m) with 4 m terraces and
+  cliff faces, impassable peaks (to ~70 m, never on paths), rivers along winding noise lines, lakes
+  in basins, and stamped craters and flattened pads (home, lots, landmarks, road cut/fill).
+- Slopes: under 30° normal, 30–45° 60% speed and no sprint, over 45° blocked. Roads +10% speed and no
+  slope penalty. Cliffs and deep water become merged collision blocks; the flow field charges extra
+  for climbing. Terrace edges get ramp gaps so everything stays reachable. Climbers scale cliffs.
+- Water: deep water blocks; cross at bridges or shallow fords (60% speed, noisy). Toxic water in the
+  Marsh and Crater drains the filter. Gas pools in low ground.
+- Ladders (generated and buildable, mutants use them too) are the first traversal link: two endpoints
+  and a way to move between them. Ziplines, vehicles and fast travel plug into the same system later.
+- Camera follows height; a terrain cutout shader dissolves ground between the camera and the player.
+  Aiming marches the mouse ray to the ground; bullets fly in 3D and terrain stops them.
+- Home site: search near the start for flat, dry, open lowland, shift the world so it sits at the
+  origin, and flatten the Home Zone.
+
+### Layout
+- 512 m regions with a district type and settlement centres. Highways link neighbouring regions'
+  settlements (computed the same from both sides), cut and fill the terrain, bridge rivers.
+- Town street grids with lots facing the road, industrial yards, farm fields. Large features are
+  planned per region; chunks build the pieces inside them. Ground decals: road shoulders, concrete
+  pads, puddles, tyre tracks, scorch marks, spills.
+
+### Biomes
+| Biome | Distance | Key sites | Hazard |
+|---|---|---|---|
+| Deadwood | Near | Cabins, logging yard | — |
+| Ruined Suburb | Near | Houses, gas station, supermarket | — |
+| Farmland | Near | Farmhouse, silo, barns | — |
+| Industrial Wastes | Mid | Factories, labs | Gas pockets |
+| Toxic Marsh | Mid | Lab ruins, spill pools | Gas, toxic water |
+| City Centre | Mid | Hospital, police station, tall ruins | Roamer density |
+| Highlands | Mid–far | Radio tower, caves, pines | Cliffs |
+| Military Zone | Far | Checkpoints, bunkers, minefields | Live mines, dormant turrets |
+| Frozen Highlands | Far, high | Weather station, ski lodge, crashed plane | Cold |
+| Crater | Far, rare | Ground Zero lab | Radiation, heavy gas |
+
+Elite modifiers (armored, toxic, fast) scale with distance in the world and raid number in raids.
+
+### Hazards
+`Survival` becomes hazard modules. Gas (now denser in low ground). Cold: a Warmth meter, fires,
+campfires, heaters, an insulated liner; at 0 you lose health and slow down. Radiation: a dose that
+lowers max health until cleared by rad meds; a lead lining slows it; the Gas Detector takes a
+Geiger module.
+
+### Landmarks and activities
+Gas station (fuel), supermarket (food), hospital (filters, meds, rad meds), police station (parts,
+ammo, locked armory), farmhouse + silo (food, lookout), radio tower (repair to reveal landmarks),
+mutant nests (clear for loot, adds attention), military checkpoints and bunkers, lab ruins and deep
+labs, Ground Zero, caves. Keycards from one landmark open another; light power puzzles; lookouts.
+Score adds landmarks discovered and farthest distance from home.
+
+### Underground areas
+Cave mouths, bunker hatches and lab elevators lead to separate areas (own collision, lighting,
+contents) built from room-and-corridor templates. No roof; walls fade. Dark, so the flashlight
+matters. Surface time keeps running: attention rises and raid warnings still reach you.
+
+### Hooks for later
+Traversal links + a shared movement modifier + a queryable road network (vehicles, fast travel).
+Timestamped chunk changes + the world event system (regrowth, supply drops). Serializable chunk
+changes (save and quit). Reward entries (unlocks).
+
+### Phases
+11. Day/night, attention, siren (M). **(done — build 1.1)** Raids start from the siren by the hut door
+    or when the meter fills. A time-of-day grade in PostFX keeps nights blue and dusk warm.
+12. Forced raids, siege simulation, rewards (M). **(done — build 1.2)** Return window with a compass
+    home, `Siege` fights the wave on paper with the base's real ammo and traps, Held/Breached/Cleared,
+    no wipe/teleport, salvage cache, call bonus in the score, map-reveal entry (no landmarks yet).
+13. Endless plumbing (M). **(done — build 1.3)** Ground and road are built per 32 m chunk (`Ground` in
+    `Terrain.ts`) and stream one ring wider than content; no edge gas, clamp or build limit. Threat is 100%
+    at 182 m and +100% every 400 m after. Far layouts are evicted past 6 chunks; `ChangeStore` keeps
+    harvested, looted and visited chunks with timestamps (serializable); `WorldEvents` is an empty
+    timed queue. `MapTiles` bakes the explored map per chunk for the minimap and the M map (drag, wheel
+    zoom, threat rings, seen ruins and labs). Debug has "Teleport 1 km out".
+14. Height and slopes (XL). **(done — build 1.4)** One `heightAt` (`Height.ts`) cached per chunk at 1 m:
+    lowlands, hills, highland terraces and peaks, a searched home pad flattened at the origin, and
+    road cut/fill. Ruins and labs sit on levelled pads that blend back into the hills; low props
+    tilt to the slope and tall ones sink to their lowest corner. Props, grass, gas, the player,
+    mutants, buildings (pillars down to the ground),
+    aim, bullets and the camera all sit on it. Slopes under 30° are free, 30–45° slow you and block
+    sprint, steeper faces become merged cliff colliders (climbers ignore them). The flow field pays
+    extra to climb. Mouse aim marches the ray to the ground; shots fly in 3D and a hill stops them.
+    A terrain cutout dissolves ground between the camera and the suit. Rivers, lakes, craters and
+    ladders stay Phase 15.
+15. Water, cliffs, craters, ladders (L). **(done — build 1.5)** Rivers run along winding noise lines
+    (none within ~120 m of the hut, and home is picked away from them), lakes sit in basins and craters
+    are stamped in past 170 m, about half holding a pool. All of it is carved into `heightAt` with banks
+    above the waterline, and the 1 m cache keeps a water surface per vertex that the ground tiles draw
+    as one sheet. Deep water (> 0.95 m) is merged colliders like cliffs and blocks every mutant; fords
+    are 60% speed, no sprint, splash and add horde noise. Marsh water and crater pools drain the filter
+    like gas. The road rises onto a causeway with a bridge where it meets a river; plank footbridges
+    span deep stretches elsewhere. Terrace cliffs get ramp corridors; the debug flood fill reaches
+    99.9–100% of walkable ground within 1 km on the seeds checked. Traversal links (`Traversal.ts`) are
+    two ends and a path: ladders are generated on cliff faces and buildable (Utility tab), the player
+    climbs with E, and mutants chasing you to another level walk to a ladder and climb it.
+16. Regions, roads, settlements (L). Districts, highways, towns, lots, farms, multi-chunk features,
+    ground decals, the four existing biomes on the new layout.
+17. Landmarks part 1 + Farmland and City Centre (L). Discovery, map markers, reveals, keycards, fuel.
+18. Underground areas + Highlands (L). Area switching, room templates, darkness, caves, bunkers.
+19. Far biomes + hazards (XL). Cold, radiation, Military Zone, Frozen Highlands, Crater, elites.
+20. Performance + balance (M). Instancing, distant chunk LOD, worker generation, biome ambience, tuning.
 
 ## Post-v1 ideas
 Not scheduled. Build the v1 phases so they don't block these.
@@ -256,6 +397,7 @@ campaign, because the game should not have an ending.
 - Milestones: raid milestones on the HUD, personal best shown during a run, Codex unlocks for long runs.
 
 ### Endless world
+Superseded by the Living World overhaul above; kept for history.
 - Remove the world edge so chunks stream forever. Things tied to the fixed 384 m map today:
   the chunk bounds and edge gas in `World.ts`, the single ground mesh in `Terrain.ts`, the
   full-map minimap, and the threat value in `Biomes.ts`, which should keep rising with distance.
@@ -266,6 +408,7 @@ campaign, because the game should not have an ending.
   far-away chunk changes per chunk so saves stay small.
 
 ### Reaching far biomes (raid timer workarounds)
+Mostly moot now the raid timer is gone (Phase 11); vehicles and outposts remain future travel options.
 The timer caps trips at about 900 m out and back, which makes far biomes unreachable. Options:
 - Outposts: build a second base far out; claiming it moves your Home Zone there.
 - Base relocation: pack up the hut and move it (a big, risky decision).

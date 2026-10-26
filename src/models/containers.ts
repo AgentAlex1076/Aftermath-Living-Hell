@@ -40,6 +40,25 @@ export function buildToolbox(): THREE.Object3D {
   return g;
 }
 
+/** Raid reward: a hazard-striped footlocker with a scrap tarp lashed over one end. */
+export function buildSalvageCache(): THREE.Object3D {
+  const g = group('salvageCache');
+  g.add(
+    box(1.0, 0.46, 0.56, mat('metalDark'), { pos: [0, 0.25, 0] }),
+    box(1.04, 0.08, 0.6, mat('hazardYellow'), { pos: [0, 0.5, 0] }),
+    box(0.12, 0.47, 0.58, mat('hazardYellow'), { pos: [-0.3, 0.25, 0] }),
+    box(0.12, 0.47, 0.58, mat('hazardYellow'), { pos: [0.3, 0.25, 0] }),
+    box(0.5, 0.06, 0.64, mat('clothStain'), { pos: [0.28, 0.56, 0.02], rot: [0, 0, -0.08] }),
+    box(0.1, 0.08, 0.04, mat('tin'), { pos: [0, 0.4, 0.3] }),
+    torus(0.06, 0.012, mat('iron'), { pos: [-0.52, 0.32, 0], rot: [0, Math.PI / 2, 0], arc: Math.PI }),
+    torus(0.06, 0.012, mat('iron'), { pos: [0.52, 0.32, 0], rot: [0, Math.PI / 2, 0], arc: Math.PI }),
+    box(0.06, 0.04, 0.04, mat('redPaint'), { pos: [-0.12, 0.555, 0.25] }),
+  );
+  const colliders: LocalCollider[] = [{ kind: 'box', x: 0, z: 0, hw: 0.54, hd: 0.32 }];
+  g.userData.colliders = colliders;
+  return g;
+}
+
 export function buildLabLocker(): THREE.Object3D {
   const g = group('labLocker');
   g.add(

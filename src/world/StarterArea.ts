@@ -1,14 +1,13 @@
 import * as THREE from 'three';
 import { CONFIG } from '../data/config';
 import { events } from '../core/EventBus';
-import { createNoise2D, fbm } from '../core/noise';
 import { Rng } from '../core/random';
 import { STARTER_SUPPLIES } from '../data/loot';
 import { HUT } from '../models/structures';
 import type { LightEmitter } from '../render/LightPool';
 import type { Occluder, OcclusionFader } from '../render/Occlusion';
 import { HomeZone } from './HomeZone';
-import type { InteractionSystem } from './Interactables';
+import type { Interactable, InteractionSystem } from './Interactables';
 import type { World } from './World';
 
 export interface StarterAreaContext {
@@ -20,6 +19,7 @@ export interface StarterAreaContext {
   onUseWorkbench: () => void;
   onUseOven: () => void;
   onUseGunBench: () => void;
+  onUseSiren: () => void;
 }
 
 export interface StarterArea {
@@ -30,9 +30,12 @@ export interface StarterArea {
   workbench: THREE.Vector3;
   gunBench: THREE.Vector3;
   ovenLights: LightEmitter[];
+  /** The signal siren by the door; Game keeps its prompt and lamp in sync with the raid state. */
+  siren: Interactable;
+  sirenLights: LightEmitter[];
 }
 
-/** The hand-built home: hut, stations, starter crate, yard junk and the road. Never unloads. */
+/** The hand-built home: hut, stations, starter crate, yard junk and the wrecks along the road. Never unloads. */
 export function buildStarterArea(ctx: StarterAreaContext): StarterArea {
   const { world } = ctx;
   const { roadZ, roadWidth } = CONFIG.world;
@@ -88,6 +91,19 @@ export function buildStarterArea(ctx: StarterAreaContext): StarterArea {
     onInteract: () => events.emit('toast', { text: "You can't sleep. Not with them out there.", tone: 'danger' }),
   });
 
+  const sirenX = HUT.doorMaxX + 1.1;
+  const sirenZ = HUT.depth / 2 + 0.85;
+  const sirenLights = world.spawnProp('prop.siren', sirenX, sirenZ, 0, seed()).lights;
+  for (const l of sirenLights) l.gain = 0;
+  const siren = ctx.interactions.add({
+    id: 'siren',
+    label: 'Signal Siren',
+    verb: 'Crank',
+    position: new THREE.Vector3(sirenX, 0, sirenZ + 0.3),
+    radius: 1.6,
+    onInteract: ctx.onUseSiren,
+  });
+
   // Yard junk: all of it can be harvested.
   world.spawnNode('barrel', 4.0, -1.6, 0, seed(), uid());
   world.spawnNode('barrel', 4.25, -0.85, 0.6, seed(), uid());
@@ -103,7 +119,6 @@ export function buildStarterArea(ctx: StarterAreaContext): StarterArea {
   world.spawnProp('prop.fence', -9.6, 0.2, Math.PI / 2 + 0.15, seed());
   world.spawnProp('prop.fence', 6.8, -5.5, -0.35, seed());
 
-  ctx.scene.add(buildRoad(ctx.seed));
   world.spawnNode('car', -9, roadZ - 1.6, 0.18, seed(), uid());
   world.spawnNode('car', 21, roadZ + 1.2, Math.PI - 0.4, seed(), uid());
   world.spawnProp('prop.lampPost', 3.5, roadZ - roadWidth / 2 - 0.8, -Math.PI / 2, seed());
@@ -123,54 +138,7 @@ export function buildStarterArea(ctx: StarterAreaContext): StarterArea {
     workbench,
     gunBench,
     ovenLights,
+    siren,
+    sirenLights,
   };
-}
-
-function buildRoad(seed: number): THREE.Group {
-  const { roadZ, roadWidth, halfSize } = CONFIG.world;
-  const group = new THREE.Group();
-  group.name = 'road';
-  const length = halfSize * 2 + 60;
-  const geo = new THREE.PlaneGeometry(length, roadWidth, 260, 6);
-  geo.rotateX(-Math.PI / 2);
-  const noise = createNoise2D(seed + 7);
-  const pos = geo.attributes.position;
-  const colors = new Float32Array(pos.count * 3);
-  const base = new THREE.Color('#2c2d2e');
-  const light = new THREE.Color('#3d3e3d');
-  const dirt = new THREE.Color('#3a352c');
-  const c = new THREE.Color();
-  for (let i = 0; i < pos.count; i++) {
-    const x = pos.getX(i);
-    const z = pos.getZ(i);
-    const n = fbm(noise, x * 0.12, z * 0.5, 3);
-    c.copy(base).lerp(light, THREE.MathUtils.smoothstep(n, 0.1, 0.5));
-    const edge = Math.abs(z) / (roadWidth / 2);
-    c.lerp(dirt, THREE.MathUtils.smoothstep(edge + n * 0.4, 0.75, 1.05));
-    colors[i * 3] = c.r;
-    colors[i * 3 + 1] = c.g;
-    colors[i * 3 + 2] = c.b;
-  }
-  geo.setAttribute('color', new THREE.BufferAttribute(colors, 3));
-  const road = new THREE.Mesh(geo, new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.95 }));
-  road.position.set(0, 0.012, roadZ);
-  road.receiveShadow = true;
-  group.add(road);
-
-  const rng = new Rng(seed + 31);
-  const dashGeo = new THREE.PlaneGeometry(1.8, 0.14);
-  dashGeo.rotateX(-Math.PI / 2);
-  const dashCount = Math.floor(length / 4.5);
-  const dashes = new THREE.InstancedMesh(dashGeo, new THREE.MeshStandardMaterial({ color: '#8f7f3f', roughness: 0.9 }), dashCount);
-  const m = new THREE.Matrix4();
-  let n = 0;
-  for (let i = 0; i < dashCount; i++) {
-    if (rng.chance(0.2)) continue;
-    m.makeTranslation(-length / 2 + i * 4.5, 0.022, roadZ + rng.range(-0.04, 0.04));
-    dashes.setMatrixAt(n++, m);
-  }
-  dashes.count = n;
-  dashes.receiveShadow = true;
-  group.add(dashes);
-  return group;
 }

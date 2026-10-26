@@ -9,6 +9,8 @@ import type { ItemAmount } from '../data/loot';
 import { Enemy, dampEnemyFacing } from '../entities/Enemy';
 import type { Player } from '../entities/Player';
 import { HALF_TAG, type CollisionWorld } from '../physics/Collision';
+import { CLIFF_TAG } from '../world/Height';
+import { endPoint, pointAlong, type Traversal } from '../world/Traversal';
 import type { Debris } from '../render/Debris';
 import type { FloatingText } from '../ui/FloatingText';
 import type { World } from '../world/World';
@@ -22,7 +24,7 @@ const POOL: Record<EnemyId, number> = {
   chemist: 2, patientZero: 1,
 };
 const IGNORE_SLIP = [HALF_TAG];
-const IGNORE_CLIMB = [HALF_TAG, BUILD_TAG, DEPLOY_TAG];
+const IGNORE_CLIMB = [HALF_TAG, BUILD_TAG, DEPLOY_TAG, CLIFF_TAG];
 const FRENZY = ENEMIES.screamer.scream!;
 const _p = new THREE.Vector3();
 
@@ -47,6 +49,8 @@ export class Horde {
   hazardMul: (x: number, z: number) => number = () => 1;
   /** Lit ground (powered floodlights) keeps stalkers from cloaking. Set by Defenses. */
   revealAt: (x: number, z: number) => boolean = () => false;
+  /** 0 in daylight, 1 at full night. Roamers notice the player from farther away at night. */
+  night = 0;
   readonly fx: MutantFx;
   private readonly pool = new Map<EnemyId, Enemy[]>();
   private readonly queue: SpawnJob[] = [];
@@ -65,6 +69,7 @@ export class Horde {
     private readonly floaters: FloatingText,
     private readonly onMauled: () => void,
     onAcid: () => void,
+    private readonly traversal: Traversal,
   ) {
     for (const id of Object.keys(POOL) as EnemyId[]) {
       const list: Enemy[] = [];
@@ -75,7 +80,18 @@ export class Horde {
       }
       this.pool.set(id, list);
     }
-    this.fx = new MutantFx(scene, player, building, debris, floaters, onAcid);
+    this.fx = new MutantFx(scene, player, building, debris, floaters, onAcid, (x, z) => world.height.at(x, z));
+    events.on('noise', ({ x, z, radius }) => this.hear(x, z, radius));
+  }
+
+  /** Roamers in earshot drop what they're doing and go look. */
+  private hear(x: number, z: number, radius: number): void {
+    for (const e of this.enemies) {
+      if (!e.alive || e.raid) continue;
+      if (Math.hypot(e.position.x - x, e.position.z - z) > radius) continue;
+      e.alertAt.set(x + (Math.random() - 0.5) * 4, z + (Math.random() - 0.5) * 4);
+      e.alertT = CONFIG.horde.investigateTime;
+    }
   }
 
   get raidAlive(): number {
@@ -107,12 +123,36 @@ export class Horde {
     this.queue.push(...jobs);
   }
 
+  /** A kill made without a body on the field (a simulated siege). Counts for score and the Codex. */
+  creditKill(id: EnemyId): void {
+    this.kills++;
+    this.killsByType[id] = (this.killsByType[id] ?? 0) + 1;
+    events.emit('enemy:killed', { id });
+  }
+
+  /** Pulls the raid off the field (living wave and queued spawns) so a siege can fight it on paper. */
+  withdrawRaid(): { id: EnemyId; hp: number }[] {
+    const out: { id: EnemyId; hp: number }[] = [];
+    for (const e of this.enemies) {
+      if (!e.alive || !e.raid) continue;
+      out.push({ id: e.def.id, hp: e.hp });
+      e.hide();
+    }
+    for (let i = this.queue.length - 1; i >= 0; i--) {
+      const j = this.queue[i];
+      if (!j.raid) continue;
+      out.push({ id: j.id, hp: ENEMIES[j.id].hp * (j.hpMul ?? 1) });
+      this.queue.splice(i, 1);
+    }
+    return out;
+  }
+
   spawn(id: EnemyId, x: number, z: number, raid: boolean, hpMul = 1): Enemy | null {
     const list = this.pool.get(id);
     const e = list?.find((m) => !m.object.visible && m.state !== 'dead') ?? list?.find((m) => !m.alive);
     if (!e) return null;
     if (!this.enemies.includes(e)) this.enemies.push(e);
-    e.spawn(x, z, raid, hpMul);
+    e.spawn(x, z, raid, hpMul, this.world.height.at(x, z));
     if (e.def.boss) {
       sfx(e.def.voice, { x, z, volume: 1.4 });
       events.emit('camera:shake', { amount: 0.3 });
@@ -142,12 +182,13 @@ export class Horde {
     return best;
   }
 
-  /** Closest living mutant within `radius` of a ground point. */
-  near(x: number, z: number, radius: number): Enemy | null {
+  /** Closest living mutant within `radius` of a ground point. `y` skips anyone on another terrace. */
+  near(x: number, z: number, radius: number, y?: number): Enemy | null {
     let best: Enemy | null = null;
     let bestD = radius;
     for (const e of this.enemies) {
       if (!e.alive) continue;
+      if (y !== undefined && (y < e.position.y - 0.4 || y > e.position.y + e.def.height + 0.5)) continue;
       const d = Math.hypot(e.position.x - x, e.position.z - z) - e.def.radius;
       if (d < bestD) {
         bestD = d;
@@ -170,8 +211,8 @@ export class Horde {
   hurt(e: Enemy, power: number, word = ''): boolean {
     if (!e.alive) return false;
     const dead = e.hit(power);
-    _p.set(e.position.x, e.def.height * 0.65 + e.lift, e.position.z);
-    this.debris.burst(e.position.x, 0.9 + e.lift, e.position.z, e.def.debrisColor, dead ? 18 : 7);
+    _p.set(e.position.x, e.position.y + e.def.height * 0.65 + e.lift, e.position.z);
+    this.debris.burst(e.position.x, e.position.y + 0.9 + e.lift, e.position.z, e.def.debrisColor, dead ? 18 : 7);
     this.floaters.spawn(_p, word || e.def.hitWords[Math.floor(Math.random() * e.def.hitWords.length)], 'word', undefined, 0, 0, power);
     sfx(e.def.id === 'bloater' || e.def.id === 'spitter' ? 'hit.goo' : 'hit.flesh', { x: e.position.x, z: e.position.z, pitch: 0.85 + Math.random() * 0.3 });
     events.emit('camera:shake', { amount: dead ? 0.22 : 0.08 });
@@ -216,15 +257,20 @@ export class Horde {
     e.cooldown = Math.max(0, e.cooldown - dt);
     e.specialT = Math.max(0, e.specialT - dt);
     e.buffT = Math.max(0, e.buffT - dt);
+    if (e.link) {
+      this.climbLink(e, dt);
+      return;
+    }
 
     const toPlayer = Math.hypot(p.position.x - e.position.x, p.position.z - e.position.z);
+    const level = Math.abs(p.position.y - e.position.y) < 1.6 + (d.boss ? 1 : 0) + e.lift;
     this.tickVent(e, dt, p, toPlayer);
     this.tickCloak(e, dt, toPlayer);
     this.tickVoice(e, dt);
     this.tickBrood(e);
 
     const structure = d.climbs ? null : this.building.pieceNear(e.position.x, e.position.z, CONFIG.raid.structureReach + d.radius);
-    const canHitPlayer = toPlayer < d.attackRange + CONFIG.player.radius;
+    const canHitPlayer = level && toPlayer < d.attackRange + CONFIG.player.radius;
     const canHitWall = !!structure && this.building.distanceTo(structure, e.position.x, e.position.z) < CONFIG.raid.structureReach + 0.05;
 
     if (e.state === 'attack') {
@@ -254,7 +300,22 @@ export class Horde {
     let wx = 0;
     let wz = 0;
     const hold = this.holdDistance(e, toPlayer);
-    if (toPlayer < CONFIG.raid.playerAggro || (hold > 0 && toPlayer < hold + 3)) {
+    const aggro = CONFIG.raid.playerAggro * (e.raid ? 1 : 1 + (CONFIG.horde.nightAggro - 1) * this.night);
+    e.alertT = Math.max(0, e.alertT - dt);
+    const route = !level && !d.climbs && toPlayer < aggro * 2 ? this.traversal.route(e.position.x, e.position.y, e.position.z, p.position.y, CONFIG.traversal.mutantSeek) : null;
+    if (route) {
+      const dx = route.at.x - e.position.x;
+      const dz = route.at.z - e.position.z;
+      const dist = Math.hypot(dx, dz);
+      if (dist < 0.55) {
+        e.link = route.link;
+        e.linkDir = route.end === 0 ? 1 : -1;
+        e.linkS = route.end === 0 ? 0 : route.link.length;
+        return;
+      }
+      wx = dx / dist;
+      wz = dz / dist;
+    } else if (toPlayer < aggro || (hold > 0 && toPlayer < hold + 3)) {
       const inv = toPlayer || 1;
       wx = (p.position.x - e.position.x) / inv;
       wz = (p.position.z - e.position.z) / inv;
@@ -275,6 +336,15 @@ export class Horde {
         wx = (tx - e.position.x) / inv;
         wz = (tz - e.position.z) / inv;
       }
+    } else if (e.alertT > 0) {
+      const dx = e.alertAt.x - e.position.x;
+      const dz = e.alertAt.y - e.position.z;
+      const dist = Math.hypot(dx, dz);
+      if (dist < 1.5) e.alertT = 0;
+      else {
+        wx = dx / dist;
+        wz = dz / dist;
+      }
     } else {
       this.seed = (this.seed + 1) >>> 0;
       const wander = Math.sin(e.position.x * 0.15 + e.position.z * 0.11 + this.seed * 0.001);
@@ -290,7 +360,9 @@ export class Horde {
       wz /= len;
       if (!back) dampEnemyFacing(e, Math.atan2(wx, wz), dt);
       e.wish.set(wx, wz);
-      e.speed = d.speed * (back ? 0.5 : 1) * this.hazardMul(e.position.x, e.position.z) * (e.frenzied ? FRENZY.speedMul : 1) * this.enrage(e) * climb;
+      const walk = this.world.height.walk(e.position.x, e.position.z);
+      const slopeMul = d.climbs ? 1 : walk.mul || 0.15;
+      e.speed = d.speed * (back ? 0.5 : 1) * this.hazardMul(e.position.x, e.position.z) * (e.frenzied ? FRENZY.speedMul : 1) * this.enrage(e) * climb * slopeMul;
     } else {
       e.wish.set(0, 0);
       e.speed = 0;
@@ -301,8 +373,27 @@ export class Horde {
     e.position.x += e.wish.x * e.speed * dt;
     e.position.z += e.wish.y * e.speed * dt;
     this.collision.resolveCircle(e.position, d.radius, d.climbs ? IGNORE_CLIMB : d.slips ? IGNORE_SLIP : []);
+    if (!d.climbs && this.world.height.walk(e.position.x, e.position.z).mul <= 0 && this.world.height.walk(prevX, prevZ).mul > 0) {
+      e.position.x = prevX;
+      e.position.z = prevZ;
+    }
+    e.position.y = this.world.height.at(e.position.x, e.position.z);
     const moved = Math.hypot(e.position.x - prevX, e.position.z - prevZ);
     e.stuck = e.speed > 0.4 && moved < e.speed * dt * 0.25 ? e.stuck + dt : 0;
+  }
+
+  /** Along a traversal link at mutant pace, then back on its feet at the other end. */
+  private climbLink(e: Enemy, dt: number): void {
+    const link = e.link!;
+    e.linkS += e.linkDir * CONFIG.traversal.mutantClimbSpeed * dt;
+    e.facing = link.yaw;
+    e.speed = 1;
+    e.lift = 0;
+    pointAlong(link, e.linkS, e.position);
+    if (e.linkDir > 0 ? e.linkS < link.length : e.linkS > 0) return;
+    e.position.copy(endPoint(link, e.linkDir > 0 ? 1 : 0));
+    e.link = null;
+    e.stuck = 0;
   }
 
   /** Ranged mutants stop short of the player. 0 = walk right up. */
@@ -323,6 +414,8 @@ export class Horde {
     if (piece && piece.size.h > 0.5) {
       const dist = this.building.distanceTo(piece, e.position.x, e.position.z);
       target = piece.size.h * smoothstep(0.8, 0.05, dist);
+    } else if (this.world.height.slopeDeg(e.position.x, e.position.z) > CONFIG.world.walkSlope) {
+      target = Math.min(2.4, this.world.height.slopeDeg(e.position.x, e.position.z) * 0.04);
     }
     e.lift = damp(e.lift, target, 12, dt);
     return target > 0.2 ? 0.55 : 1;
@@ -360,7 +453,7 @@ export class Horde {
       if (toPlayer > 13 && !nearHut) return false;
       e.beginAttack('scream', 1.1);
       e.specialT = d.scream.every * (0.9 + Math.random() * 0.2);
-      this.floaters.spawn(new THREE.Vector3(e.position.x, d.height + 0.6, e.position.z), 'HHHHK...', 'warn');
+      this.floaters.spawn(new THREE.Vector3(e.position.x, e.position.y + d.height + 0.6, e.position.z), 'HHHHK...', 'warn');
       return true;
     }
     if (d.slam) {
@@ -369,7 +462,7 @@ export class Horde {
       e.beginAttack('slam', d.slam.windup / 0.55);
       e.specialT = d.slam.every;
       this.fx.ring(e.position.x, e.position.z, d.slam.radius, '#e0302a', d.slam.windup);
-      this.floaters.spawn(new THREE.Vector3(e.position.x, d.height + 0.5, e.position.z), 'HRRRNNGH!', 'warn');
+      this.floaters.spawn(new THREE.Vector3(e.position.x, e.position.y + d.height + 0.5, e.position.z), 'HRRRNNGH!', 'warn');
       return true;
     }
     return false;
@@ -395,7 +488,7 @@ export class Horde {
         if (canHitPlayer && !p.invulnerable) {
           p.damage(d.damage * mul);
           this.onMauled();
-          this.floaters.spawn(p.position.clone().setY(1.7), d.radius > 0.6 ? 'CRACK!' : 'RIP!', 'word', '#e0302a');
+          this.floaters.spawn(p.position.clone().setY(p.position.y + 1.7), d.radius > 0.6 ? 'CRACK!' : 'RIP!', 'word', '#e0302a');
           events.emit('camera:shake', { amount: 0.2 });
         } else if (wall) {
           this.building.damage(wall, d.structureDamage * mul);
@@ -409,7 +502,7 @@ export class Horde {
     const { x, z } = e.position;
     sfx('scream', { x, z, volume: 1.3 });
     this.fx.ring(x, z, s.radius, '#e0302a', 0.7);
-    this.floaters.spawn(new THREE.Vector3(x, e.def.height + 0.7, z), 'SKREEEEE!', 'word', '#e0302a', 0, 0, 60);
+    this.floaters.spawn(new THREE.Vector3(x, e.position.y + e.def.height + 0.7, z), 'SKREEEEE!', 'word', '#e0302a', 0, 0, 60);
     events.emit('camera:shake', { amount: 0.25 });
     for (const o of this.enemies) {
       if (!o.alive) continue;
@@ -494,8 +587,8 @@ export class Horde {
       this.spawn(b.id, x + Math.sin(a) * (e.def.radius + 0.6), z + Math.cos(a) * (e.def.radius + 0.6), e.raid);
     }
     sfx('pop.wet', { x, z, volume: 1.3 });
-    this.debris.burst(x, 1.4, z, e.def.debrisColor, 30);
-    this.floaters.spawn(new THREE.Vector3(x, e.def.height + 0.4, z), 'BLEEEGH!', 'word', '#8cff3a', 0, 0, 70);
+    this.debris.burst(x, e.position.y + 1.4, z, e.def.debrisColor, 30);
+    this.floaters.spawn(new THREE.Vector3(x, e.position.y + e.def.height + 0.4, z), 'BLEEEGH!', 'word', '#8cff3a', 0, 0, 70);
     events.emit('camera:shake', { amount: 0.35 });
     if (e.broodStage === 1) events.emit('toast', { text: `${e.def.name} split open. Something crawled out.`, tone: 'danger' });
   }
@@ -504,10 +597,10 @@ export class Horde {
     const list = this.enemies;
     for (let i = 0; i < list.length; i++) {
       const a = list[i];
-      if (!a.alive) continue;
+      if (!a.alive || a.link) continue;
       for (let j = i + 1; j < list.length; j++) {
         const b = list[j];
-        if (!b.alive) continue;
+        if (!b.alive || b.link) continue;
         const dx = b.position.x - a.position.x;
         const dz = b.position.z - a.position.z;
         const min = a.def.radius + b.def.radius;
@@ -523,6 +616,8 @@ export class Horde {
         a.position.z -= nz * push * wa;
         b.position.x += nx * push * wb;
         b.position.z += nz * push * wb;
+        a.position.y = this.world.height.at(a.position.x, a.position.z);
+        b.position.y = this.world.height.at(b.position.x, b.position.z);
       }
     }
   }
@@ -533,7 +628,7 @@ export class Horde {
     this.killsByType[d.id] = (this.killsByType[d.id] ?? 0) + 1;
     events.emit('enemy:killed', { id: d.id });
     const { x, z } = e.position;
-    _p.set(x, d.height * 0.8 + e.lift, z);
+    _p.set(x, e.position.y + d.height * 0.8 + e.lift, z);
     this.floaters.spawn(_p.clone().setY(_p.y + 0.4), d.deathWord, 'word', '#f2b705', 0.05, 0, d.boss ? 120 : 40);
     sfx('enemy.death', { x, z, pitch: 1.5 - Math.min(0.8, d.radius) });
     this.give(d.loot, _p);
@@ -571,7 +666,7 @@ export class Horde {
       const got = a.qty - this.inventory.add(a.item, a.qty);
       if (got > 0) {
         const def: ItemDef = ITEMS[a.item];
-        this.floaters.spawn(at.clone().setY(1.1), `+${got} ${def.name.toUpperCase()}`, 'gain', def.color, 0.08 + i * 0.1, i);
+        this.floaters.spawn(at.clone().setY(at.y + 0.3), `+${got} ${def.name.toUpperCase()}`, 'gain', def.color, 0.08 + i * 0.1, i);
       }
     });
   }

@@ -139,7 +139,12 @@ export class Gathering {
     }
     const firstTime = !c.object.userData.searchedOnce;
     c.object.userData.searchedOnce = true;
-    if (firstTime) this.searched++;
+    if (firstTime) {
+      this.searched++;
+      const { noise, hearing } = CONFIG.horde;
+      const attention = (c.def.requires ? noise.pry : 0) + (c.def.id === 'labLocker' ? noise.labLocker : 0);
+      if (attention > 0) events.emit('noise', { x: c.x, z: c.z, attention, radius: hearing.pry });
+    }
     this.floaters.spawn(at.clone().setY(1.9), c.def.requires ? 'KRRRK!' : 'RUMMAGE', 'word');
     sfx(c.def.requires ? 'hit.metal' : 'rummage', { x: c.x, z: c.z });
     const left = this.give(contents, at);

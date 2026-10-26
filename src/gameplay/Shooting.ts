@@ -1,11 +1,13 @@
 import * as THREE from 'three';
 import { CONFIG } from '../data/config';
 import { events } from '../core/EventBus';
+import { lerp } from '../core/math';
 import { sfx } from '../audio/AudioEngine';
 import { evaluateBuild, type GunInstance, type GunStats } from '../data/guns';
 import type { Player } from '../entities/Player';
 import type { Debris } from '../render/Debris';
 import type { FloatingText } from '../ui/FloatingText';
+import type { HeightField } from '../world/Height';
 import type { Building } from './Building';
 import type { Horde } from './Horde';
 import type { Inventory } from './Inventory';
@@ -13,6 +15,7 @@ import type { Inventory } from './Inventory';
 interface Shot {
   mesh: THREE.Mesh;
   vx: number;
+  vy: number;
   vz: number;
   life: number;
   damage: number;
@@ -51,6 +54,7 @@ export class Shooting {
     private readonly building: Building,
     private readonly debris: Debris,
     private readonly floaters: FloatingText,
+    private readonly height: HeightField,
   ) {
     this.tracerGeo.rotateX(Math.PI / 2);
     this.group.name = 'tracers';
@@ -60,7 +64,7 @@ export class Shooting {
       mesh.visible = false;
       mesh.castShadow = false;
       this.group.add(mesh);
-      this.pool.push({ mesh, vx: 0, vz: 0, life: 0, damage: 0, active: false });
+      this.pool.push({ mesh, vx: 0, vy: 0, vz: 0, life: 0, damage: 0, active: false });
     }
   }
 
@@ -158,7 +162,7 @@ export class Shooting {
       this.burstLeft = 0;
       sfx('gun.jam');
       events.emit('toast', { text: 'JAMMED. Hit R.', tone: 'danger' });
-      this.floaters.spawn(this.player.position.clone().setY(2.1), 'KLICK', 'warn');
+      this.floaters.spawn(this.player.position.clone().setY(this.player.position.y + 2.1), 'KLICK', 'warn');
       return;
     }
     this.discharge(gun, stats, aiming);
@@ -169,10 +173,11 @@ export class Shooting {
     const spread = (stats.spread * Math.PI) / 180;
     for (let i = 0; i < stats.projectiles; i++) {
       const a = yaw + (Math.random() * 2 - 1) * spread + (i - (stats.projectiles - 1) / 2) * spread * 0.35;
-      this.spawnShot(x, y, z, Math.sin(a) * stats.velocity, Math.cos(a) * stats.velocity, stats);
+      this.spawnShot(x, y, z, Math.sin(a) * stats.velocity, 0, Math.cos(a) * stats.velocity, stats);
     }
     this.debris.burst(x, y, z, '#f2b705', 4, Math.sin(yaw), Math.cos(yaw));
     sfx('gun.shot', { x, z, param: shotWeight(stats), pitch: 1.05 + Math.random() * 0.1, volume: 0.8 });
+    events.emit('noise', { x, z, attention: CONFIG.horde.noise.turret, radius: CONFIG.horde.hearing.shot * 0.8 });
     events.emit('camera:shake', { amount: 0.04 + stats.recoil * 0.004 });
     if (word) {
       this.floaters.spawn(
@@ -196,18 +201,30 @@ export class Shooting {
     const spread = (stats.spread * (aiming ? CONFIG.combat.aimSpread : 1) + this.heat * stats.recoil * 0.15) * (Math.PI / 180);
     const muzzle = 0.85;
     const sx = p.position.x + Math.sin(facing) * muzzle;
+    const sy = p.position.y + 1.15;
     const sz = p.position.z + Math.cos(facing) * muzzle;
+    let pitch = 0;
+    if (p.hasAimPoint) {
+      const dx = p.aimPoint.x - sx;
+      const dy = p.aimPoint.y - sy;
+      const dz = p.aimPoint.z - sz;
+      pitch = Math.atan2(dy, Math.hypot(dx, dz));
+    }
 
     for (let i = 0; i < stats.projectiles; i++) {
       const yaw = facing + (Math.random() * 2 - 1) * spread + (i - (stats.projectiles - 1) / 2) * spread * 0.35;
-      this.spawnShot(sx, 1.15, sz, Math.sin(yaw) * stats.velocity, Math.cos(yaw) * stats.velocity, stats);
+      const pr = pitch + (Math.random() * 2 - 1) * spread * 0.35;
+      const c = Math.cos(pr);
+      this.spawnShot(sx, sy, sz, Math.sin(yaw) * c * stats.velocity, Math.sin(pr) * stats.velocity, Math.cos(yaw) * c * stats.velocity, stats);
     }
 
-    this.debris.burst(sx, 1.15, sz, '#f2b705', 4, Math.sin(facing), Math.cos(facing));
+    this.debris.burst(sx, sy, sz, '#f2b705', 4, Math.sin(facing), Math.cos(facing));
     sfx('gun.shot', { param: shotWeight(stats), pitch: 0.94 + Math.random() * 0.12 });
+    const { noise, hearing } = CONFIG.horde;
+    events.emit('noise', { x: sx, z: sz, attention: lerp(noise.shot, noise.shotHeavy, shotWeight(stats)), radius: hearing.shot });
     events.emit('camera:shake', { amount: 0.06 + stats.recoil * 0.008 });
     this.floaters.spawn(
-      new THREE.Vector3(sx, 1.7, sz),
+      new THREE.Vector3(sx, sy + 0.55, sz),
       WORDS[Math.floor(Math.random() * WORDS.length)],
       'word',
       '#f2b705',
@@ -218,17 +235,18 @@ export class Shooting {
     this.inv.notify();
   }
 
-  private spawnShot(x: number, y: number, z: number, vx: number, vz: number, stats: GunStats): void {
+  private spawnShot(x: number, y: number, z: number, vx: number, vy: number, vz: number, stats: GunStats): void {
     const shot = this.pool.find((s) => !s.active);
     if (!shot) return;
     shot.active = true;
     shot.vx = vx;
+    shot.vy = vy;
     shot.vz = vz;
     shot.damage = stats.damage;
     shot.life = stats.range / Math.max(8, stats.velocity);
     shot.mesh.material = stats.ammoPerShot > 1 ? this.slugMat : this.tracerMat;
     shot.mesh.position.set(x, y, z);
-    shot.mesh.rotation.y = Math.atan2(vx, vz);
+    this.aimShot(shot);
     shot.mesh.visible = true;
   }
 
@@ -237,32 +255,42 @@ export class Shooting {
     for (const s of this.pool) {
       if (!s.active) continue;
       const nx = s.mesh.position.x + s.vx * dt;
+      const ny = s.mesh.position.y + s.vy * dt;
       const nz = s.mesh.position.z + s.vz * dt;
       s.life -= dt;
 
-      const enemy = this.horde.near(nx, nz, r + 0.35);
+      if (ny <= this.height.at(nx, nz) + 0.04) {
+        this.killShot(s, nx, this.height.at(nx, nz), nz);
+        continue;
+      }
+      const enemy = this.horde.near(nx, nz, r + 0.35, ny);
       if (enemy) {
         this.horde.hurt(enemy, s.damage);
-        this.killShot(s, nx, nz);
+        this.killShot(s, nx, ny, nz);
         continue;
       }
       const wall = this.building.pieceNear(nx, nz, r + 0.15);
-      if (wall) {
+      if (wall && ny < (wall.y ?? 0) + wall.size.h + 0.2 && ny > (wall.y ?? 0) - 0.15) {
         this.building.damage(wall, s.damage * 0.45);
-        this.killShot(s, nx, nz);
+        this.killShot(s, nx, ny, nz);
         continue;
       }
       if (s.life <= 0) {
-        this.killShot(s, nx, nz, false);
+        this.killShot(s, nx, ny, nz, false);
         continue;
       }
-      s.mesh.position.set(nx, s.mesh.position.y, nz);
-      s.mesh.rotation.y = Math.atan2(s.vx, s.vz);
+      s.mesh.position.set(nx, ny, nz);
+      this.aimShot(s);
     }
   }
 
-  private killShot(s: Shot, x: number, z: number, spark = true): void {
-    if (spark) this.debris.burst(x, 1.1, z, '#f2b705', 5);
+  private aimShot(s: Shot): void {
+    const horiz = Math.hypot(s.vx, s.vz);
+    s.mesh.rotation.set(-Math.atan2(s.vy, horiz || 1), Math.atan2(s.vx, s.vz), 0);
+  }
+
+  private killShot(s: Shot, x: number, y: number, z: number, spark = true): void {
+    if (spark) this.debris.burst(x, y, z, '#f2b705', 5);
     s.active = false;
     s.mesh.visible = false;
   }
@@ -282,7 +310,7 @@ export class Shooting {
     this.burstLeft = 0;
     if (jam) this.jammed = true;
     sfx(jam ? 'gun.jam' : 'gun.reload');
-    this.floaters.spawn(this.player.position.clone().setY(2), jam ? 'TINK-TINK' : 'CHK-CHK', 'word');
+    this.floaters.spawn(this.player.position.clone().setY(this.player.position.y + 2), jam ? 'TINK-TINK' : 'CHK-CHK', 'word');
   }
 
   private finishReload(gun: GunInstance, stats: GunStats): void {
@@ -293,7 +321,7 @@ export class Shooting {
     this.jammed = false;
     this.inv.notify();
     if (take > 0) sfx('gun.ready');
-    _p.copy(this.player.position).setY(2.05);
+    _p.copy(this.player.position).setY(this.player.position.y + 2.05);
     this.floaters.spawn(_p, take > 0 ? `+${take}` : 'EMPTY', take > 0 ? 'gain' : 'warn', '#d4b46a');
   }
 }

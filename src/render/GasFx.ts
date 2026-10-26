@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { createGasMaterial, gasGeometry } from '../world/Decor';
+import { createGasMaterial, gasGeometry, groundUnder } from '../world/Decor';
 import type { World } from '../world/World';
 
 const MAX_PUFFS = 40;
@@ -26,6 +26,7 @@ export class GasFx {
   private readonly mist: THREE.InstancedMesh;
   private readonly mistPos: Float32Array;
   private time = 0;
+  private readonly heightAt = (x: number, z: number) => this.world.height.at(x, z);
 
   constructor(scene: THREE.Scene, private readonly world: World) {
     this.puffs = new THREE.InstancedMesh(gasGeometry, this.puffMat, MAX_PUFFS * SHEETS);
@@ -73,8 +74,10 @@ export class GasFx {
         const a = hash(h) * Math.PI * 2;
         const d = puff.r * 0.5 * hash(h + 1) * (0.4 + ease * 0.6);
         const size = puff.r * (1.2 + hash(h + 2) * 0.6) * (0.35 + ease * 0.65);
-        const y = 0.25 + (k % 3) * 0.55 + hash(h + 3) * 0.3 + age * 0.04;
-        _m.makeScale(size, size, size).setPosition(puff.x + Math.sin(a) * d, y, puff.z + Math.cos(a) * d);
+        const px = puff.x + Math.sin(a) * d;
+        const pz = puff.z + Math.cos(a) * d;
+        const y = groundUnder(this.heightAt, px, pz, size * 0.35) + 0.25 + (k % 3) * 0.55 + hash(h + 3) * 0.3 + age * 0.04;
+        _m.makeScale(size, size, size).setPosition(px, y, pz);
         this.puffs.setMatrixAt(n, _m);
         this.puffs.setColorAt(n, _c.setRGB(0.3 * fade * (0.5 + ease * 0.5), hash(h + 4), 0));
         n++;
@@ -96,7 +99,7 @@ export class GasFx {
       x = focus.x + ((((x - focus.x + half) % MIST_BOX) + MIST_BOX) % MIST_BOX) - half;
       z = focus.z + ((((z - focus.z + half) % MIST_BOX) + MIST_BOX) % MIST_BOX) - half;
       const s = 9 + hash(i * 5.1) * 7;
-      _m.makeScale(s, s, s).setPosition(x, 0.15 + hash(i * 2.9) * 0.5, z);
+      _m.makeScale(s, s, s).setPosition(x, groundUnder(this.heightAt, x, z, s * 0.35) + 0.15 + hash(i * 2.9) * 0.5, z);
       this.mist.setMatrixAt(i, _m);
       const edge = Math.max(Math.abs(x - focus.x), Math.abs(z - focus.z)) / half;
       this.mist.setColorAt(i, _c.setRGB(alpha * Math.min(1, (1 - edge) * 3), hash(i * 1.3 + 9), 0));

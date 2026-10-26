@@ -4,9 +4,9 @@ import { buildHazmat } from './hazmat';
 import { ALL_GUN_PART_IDS } from '../data/guns';
 import { assembleGun, buildAmmoItem, buildCraftedGunItem, buildGunBench, buildGunPart } from './guns';
 import { buildCraftingTable, buildHut, buildMattress, buildOven } from './structures';
-import { buildBarrel, buildBarrier, buildCar, buildCrate, buildDeadTree, buildFence, buildLampPost, buildRubble } from './props';
+import { buildBarrel, buildBarrier, buildCar, buildCrate, buildDeadTree, buildFence, buildLampPost, buildRubble, buildSiren } from './props';
 import { buildBoulder, buildCarcass, buildScrapPile } from './nodes';
-import { buildCabinet, buildLabLocker, buildToolbox } from './containers';
+import { buildCabinet, buildLabLocker, buildSalvageCache, buildToolbox } from './containers';
 import { buildLabRuin, buildRuinHouse } from './ruins';
 import { ITEM_MODELS } from './items';
 import { buildPiece, buildStorageBox } from './buildables';
@@ -20,6 +20,8 @@ import {
 } from './mutants';
 import { PIECES, TIER_ORDER, pieceModel, type PieceDef, type PieceId } from '../data/buildables';
 import type { Rng } from '../core/random';
+import { FOOTBRIDGE_LENGTHS, ROAD_BRIDGE_LENGTHS } from '../world/Height';
+import { buildFootbridge, buildRoadBridge } from './traversal';
 
 const DEPLOY_BUILDERS: Partial<Record<PieceId, (rng: Rng) => THREE.Object3D>> = {
   storageBox: buildStorageBox,
@@ -54,6 +56,9 @@ export function registerModels(): void {
   models.register('prop.fence', (rng) => buildFence(rng));
   models.register('prop.lampPost', () => buildLampPost());
   models.register('prop.barrier', () => buildBarrier());
+  models.register('prop.siren', () => buildSiren());
+  for (const l of FOOTBRIDGE_LENGTHS) models.register(`prop.footbridge.${l}`, (rng) => buildFootbridge(rng, l));
+  for (const l of ROAD_BRIDGE_LENGTHS) models.register(`prop.roadBridge.${l}`, (rng) => buildRoadBridge(rng, l));
 
   models.register('node.rock', (rng) => buildBoulder(rng));
   models.register('node.scrapPile', (rng) => buildScrapPile(rng));
@@ -62,6 +67,7 @@ export function registerModels(): void {
   models.register('container.cabinet', () => buildCabinet());
   models.register('container.toolbox', () => buildToolbox());
   models.register('container.labLocker', () => buildLabLocker());
+  models.register('container.salvage', () => buildSalvageCache());
 
   models.register('structure.ruinHouse', (rng) => buildRuinHouse(rng));
   models.register('structure.labRuin', (rng) => buildLabRuin(rng));

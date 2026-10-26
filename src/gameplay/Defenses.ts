@@ -28,6 +28,10 @@ interface Runtime {
   yaw: number;
   loaded: number;
   fuelT: number;
+  /** Seconds until a running generator next reports its noise. */
+  noiseT: number;
+  /** Ammo / chemicals owed by a simulated siege, spent a whole unit at a time. */
+  siegeT: number;
   powered: boolean;
   running: boolean;
   spent: boolean;
@@ -80,6 +84,83 @@ export class Defenses {
       m = Math.min(m, id === 'spikeStrip' ? D.spikeSlow : D.barbedSlow);
     }
     return m;
+  }
+
+  // --- Simulated sieges (the base fighting without the player) ----------------------------------
+
+  /**
+   * Damage the base's guns and contact traps deal in `dt` to a wave attacking from `heading`
+   * (radians around the hut). Spends turret ammo, shotgun shells and flame-vent chemicals.
+   */
+  siegeFire(dt: number, heading: number): number {
+    let dmg = 0;
+    for (const p of this.building.pieces) {
+      const rt = this.run.get(p.uid);
+      if (!rt || rt.spent) continue;
+      switch (p.def.id) {
+        case 'autoTurret': {
+          const gun = this.mountedGun(p);
+          const ev = gun ? evaluateBuild(gun.parts) : null;
+          if (!rt.powered || !ev?.ok) break;
+          const s = ev.stats;
+          const shots = this.siegeSpend(p, rt, 'ammo', s.fireRate * s.ammoPerShot * dt) / Math.max(1, s.ammoPerShot);
+          dmg += shots * s.damage * Math.max(1, s.projectiles) * 0.55;
+          break;
+        }
+        case 'shotgunTrap': {
+          if (!facing(p, heading)) break;
+          const shells = this.siegeSpend(p, rt, 'ammo', dt / D.shotgunCooldown);
+          dmg += shells * D.shotgun.damage * D.shotgun.projectiles * 0.5;
+          break;
+        }
+        case 'flameVent': {
+          if (!rt.powered || !facing(p, heading)) break;
+          if (this.siegeSpend(p, rt, 'chemicals', D.flameChemPerSecond * dt) > 0) dmg += D.flameDps * 0.5 * dt;
+          break;
+        }
+        case 'spikeStrip':
+        case 'barbedWire':
+          if (inSector(p, heading)) dmg += (p.def.id === 'spikeStrip' ? D.spikeDps : D.barbedDps) * 0.6 * dt;
+          break;
+        default:
+          break;
+      }
+    }
+    return dmg;
+  }
+
+  /** Mines, tripwires and gas traps on the attacked side all go off once. Returns the total damage. */
+  siegeTraps(heading: number): number {
+    let dmg = 0;
+    for (const p of [...this.building.pieces]) {
+      const rt = this.run.get(p.uid);
+      if (!rt || rt.spent || !inSector(p, heading)) continue;
+      const hit = p.def.id === 'landmine' ? D.mineDamage * 2.5 : p.def.id === 'tripwire' ? D.tripDamage * 2.5 : p.def.id === 'gasTrap' ? 45 : 0;
+      if (!hit) continue;
+      dmg += hit;
+      rt.spent = true;
+      this.building.destroy(p, 'destroyed', true);
+    }
+    return dmg;
+  }
+
+  /** Spends `owed` units of `item` (fractions carry over, a turret's loaded rounds go first). Returns `owed`, or 0 if it's dry. */
+  private siegeSpend(p: Piece, rt: Runtime, item: ItemId, owed: number): number {
+    const have = (item === 'ammo' ? rt.loaded : 0) + this.countItem(p, item);
+    if (have <= 0) {
+      rt.siegeT = 0;
+      return 0;
+    }
+    rt.siegeT += owed;
+    while (rt.siegeT >= 1) {
+      if (item === 'ammo' && rt.loaded > 0) rt.loaded--;
+      else if (this.takeItem(p, item, 1) <= 0) {
+        rt.siegeT = 0;
+        break;
+      }
+      rt.siegeT -= 1;
+    }
+    return owed;
   }
 
   poweredAt(x: number, z: number): boolean {
@@ -178,7 +259,7 @@ export class Defenses {
       this.scene.add(ring);
     }
     return {
-      piece: p, armT: 0, cooldown: 0, yaw: p.rot, loaded: 0, fuelT: 0,
+      piece: p, armT: 0, cooldown: 0, yaw: p.rot, loaded: 0, fuelT: 0, noiseT: 2, siegeT: 0,
       powered: !p.def.needsPower, running: false, spent: false, lights, ring,
       head: p.object.getObjectByName('head') ?? null,
       gunObject: null, gunKey: '',
@@ -273,7 +354,7 @@ export class Defenses {
     rt.cooldown = D.shotgunCooldown;
     const mx = p.x + Math.sin(yaw) * 0.45;
     const mz = p.z + Math.cos(yaw) * 0.45;
-    this.shooting.fireFrom(mx, 0.95, mz, yaw, D.shotgun as GunStats);
+    this.shooting.fireFrom(mx, p.y + 0.95, mz, yaw, D.shotgun as GunStats);
     this.floaters.spawn(new THREE.Vector3(p.x, 1.5, p.z), 'BOOM!', 'word', '#f2b705');
   }
 
@@ -284,6 +365,11 @@ export class Defenses {
       if (rt.fuelT <= 0) {
         if (this.takeItem(p, 'wood', 1) > 0) rt.fuelT += D.fuelBurn;
         else rt.running = false;
+      }
+      rt.noiseT -= dt;
+      if (rt.noiseT <= 0) {
+        rt.noiseT += 2;
+        events.emit('noise', { x: p.x, z: p.z, attention: CONFIG.horde.noise.generator * 2, radius: CONFIG.horde.hearing.generator });
       }
     }
     if (rt.ring) {
@@ -322,7 +408,7 @@ export class Defenses {
     rt.cooldown = 1 / Math.max(0.4, stats.fireRate);
     const mx = p.x + Math.sin(rt.yaw) * 0.55;
     const mz = p.z + Math.cos(rt.yaw) * 0.55;
-    this.shooting.fireFrom(mx, 1.05, mz, rt.yaw, stats, stats.fireMode === 'semi');
+    this.shooting.fireFrom(mx, p.y + 1.05, mz, rt.yaw, stats, stats.fireMode === 'semi');
   }
 
   private tickFlood(rt: Runtime): void {
@@ -376,6 +462,7 @@ export class Defenses {
     }
     this.debris.burst(p.x, 0.7, p.z, '#f2b705', 28);
     sfx('explosion', { x: p.x, z: p.z });
+    events.emit('noise', { x: p.x, z: p.z, attention: CONFIG.horde.noise.explosion, radius: CONFIG.horde.hearing.explosion });
     this.floaters.spawn(new THREE.Vector3(p.x, 1.6, p.z), 'KRA-KOOM!', 'word', '#f2b705', 0, 0, damage);
     events.emit('camera:shake', { amount: 0.45 });
     this.building.destroy(p, 'destroyed');
@@ -423,6 +510,20 @@ export class Defenses {
     mount.add(mesh);
     rt.gunObject = mesh;
   }
+}
+
+/** Half-width of the side of the base a siege wave hits. */
+const SECTOR = 1.0;
+
+/** A piece is on the attacked side: within the wedge around `heading`, or right up against the hut. */
+export function inSector(p: { x: number; z: number }, heading: number): boolean {
+  if (Math.hypot(p.x, p.z) < 5) return true;
+  return Math.abs(wrapAngle(Math.atan2(p.x, p.z) - heading)) < SECTOR;
+}
+
+/** A directional trap on the attacked side that points roughly outward, toward the wave. */
+function facing(p: Piece, heading: number): boolean {
+  return inSector(p, heading) && Math.abs(wrapAngle(p.rot - heading)) < 1.3;
 }
 
 function distToSeg(px: number, pz: number, ax: number, az: number, bx: number, bz: number): number {

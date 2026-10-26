@@ -11,6 +11,8 @@ export const SCORE = {
 
 export interface ScoreInput {
   raids: number;
+  /** Points actually earned from raids (call bonus, held sieges at half). Falls back to `raids × perRaid`. */
+  raidPoints?: number;
   kills: number;
   bosses: number;
   built: number;
@@ -52,7 +54,7 @@ export function raidMultiplier(raids: number): number {
 export function scoreRun(input: ScoreInput): ScoreResult {
   const regular = Math.max(0, input.kills - input.bosses);
   const breakdown: ScoreBreakdown = {
-    raids: input.raids * SCORE.perRaid,
+    raids: input.raidPoints ?? input.raids * SCORE.perRaid,
     kills: regular * SCORE.perKill,
     bosses: input.bosses * (SCORE.perKill + SCORE.perBoss),
     built: input.built * SCORE.perBuild,

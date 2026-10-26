@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { damp } from '../core/math';
 import { Rng } from '../core/random';
 import { sfx } from '../audio/AudioEngine';
+import { getGroundMaterial } from '../world/Terrain';
 
 const DROPS = 3200;
 const SPLASHES = 700;
@@ -25,7 +26,7 @@ const rainVertex = /* glsl */ `
     float y = mod(base.y - uTime * speed, uBox.y);
     float fall = (uBox.y - y) / speed;
     vec2 xz = mod(base.xz + uWind * fall - uFocus.xz + uBox.xz * 0.5, uBox.xz) + uFocus.xz - uBox.xz * 0.5;
-    vec3 p = vec3(xz.x, y, xz.y);
+    vec3 p = vec3(xz.x, y + uFocus.y - 4.0, xz.y);
     float len = 0.55 + aDrop.z * 0.5;
     p -= normalize(vel) * len * aCorner.y;
     vec4 mv = modelViewMatrix * vec4(p, 1.0);
@@ -61,7 +62,7 @@ const splashVertex = /* glsl */ `
     vec2 r = vec2(hash(k * 12.9 + aSeed.z * 91.0), hash(k * 7.3 + aSeed.x * 53.0));
     vec2 xz = uFocus.xz + (r - 0.5) * uBox.xz * 0.7;
     vOn = step(aSeed.z, uIntensity);
-    vec4 mv = modelViewMatrix * vec4(xz.x, 0.22, xz.y, 1.0);
+    vec4 mv = modelViewMatrix * vec4(xz.x, uFocus.y + 0.22, xz.y, 1.0);
     gl_Position = projectionMatrix * mv;
     gl_PointSize = (0.06 + vLife * 0.26) * uScale / -mv.z;
   }
@@ -104,7 +105,7 @@ export class Weather {
   private readonly rainMesh: THREE.Mesh;
   private readonly splashPoints: THREE.Points;
   private readonly wind = new THREE.Vector2(2.2, 0.8);
-  private readonly ground: THREE.MeshStandardMaterial | null;
+  private readonly ground: THREE.MeshStandardMaterial;
   private readonly groundColor = new THREE.Color();
 
   constructor(scene: THREE.Scene, seed: number) {
@@ -149,9 +150,8 @@ export class Weather {
     this.splashPoints.name = 'splashes';
     scene.add(this.splashPoints);
 
-    const terrain = scene.getObjectByName('terrain') as THREE.Mesh | undefined;
-    this.ground = (terrain?.material as THREE.MeshStandardMaterial | undefined) ?? null;
-    if (this.ground) this.groundColor.copy(this.ground.color);
+    this.ground = getGroundMaterial();
+    this.groundColor.copy(this.ground.color);
   }
 
   /** Debug: pin the weather (null returns it to the schedule). */
@@ -189,10 +189,8 @@ export class Weather {
     this.rainMesh.visible = this.rain > 0.01;
     this.splashPoints.visible = this.rain > 0.05;
 
-    if (this.ground) {
-      this.ground.color.copy(this.groundColor).multiplyScalar(1 - this.wet * 0.28);
-      this.ground.roughness = 1 - this.wet * 0.42;
-    }
+    this.ground.color.copy(this.groundColor).multiplyScalar(1 - this.wet * 0.28);
+    this.ground.roughness = 1 - this.wet * 0.42;
 
     if (this.kind === 'storm' && this.rain > 0.6) {
       this.boltT -= dt;

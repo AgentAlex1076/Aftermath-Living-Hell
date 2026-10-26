@@ -1,6 +1,9 @@
 import * as THREE from 'three';
+import { smoothstep } from '../core/math';
 import { Rng } from '../core/random';
 import type { BiomeId } from './Biomes';
+import type { Decal } from './Regions';
+import { addTerrainCutout } from './Terrain';
 
 const gasVertex = /* glsl */ `
   #include <common>
@@ -58,6 +61,11 @@ const gasFragment = /* glsl */ `
   }
 `;
 
+/** Highest ground under a flat gas sheet, so its uphill edge doesn't slice into a slope. */
+export function groundUnder(heightAt: (x: number, z: number) => number, x: number, z: number, r: number): number {
+  return Math.max(heightAt(x, z), heightAt(x + r, z), heightAt(x - r, z), heightAt(x, z + r), heightAt(x, z - r));
+}
+
 let gasMaterial: THREE.ShaderMaterial | null = null;
 export const gasGeometry = new THREE.PlaneGeometry(1, 1);
 
@@ -96,6 +104,7 @@ export function buildGasClouds(
   size: number,
   seed: number,
   gasAt: (x: number, z: number) => number,
+  heightAt: (x: number, z: number) => number = () => 0,
 ): THREE.InstancedMesh | null {
   const rng = new Rng(seed);
   const step = 4;
@@ -113,7 +122,8 @@ export function buildGasClouds(
       if (g < 0.12) continue;
       for (let layer = 0; layer < 2 && n < max; layer++) {
         const s = rng.range(5, 9) * (0.7 + g * 0.4);
-        m.makeScale(s, s, s).setPosition(x + rng.range(-1, 1), layer === 0 ? rng.range(0.25, 0.7) : rng.range(1.1, 2.0), z + rng.range(-1, 1));
+        const y0 = groundUnder(heightAt, x, z, s * 0.4);
+        m.makeScale(s, s, s).setPosition(x + rng.range(-1, 1), y0 + (layer === 0 ? rng.range(0.25, 0.7) : rng.range(1.1, 2.0)), z + rng.range(-1, 1));
         mesh.setMatrixAt(n, m);
         mesh.setColorAt(n, c.setRGB(Math.min(1, g) * (layer === 0 ? 0.4 : 0.26), rng.next(), 0));
         n++;
@@ -125,7 +135,7 @@ export function buildGasClouds(
     return null;
   }
   mesh.count = n;
-  mesh.boundingSphere = new THREE.Sphere(new THREE.Vector3(x0 + size / 2, 1, z0 + size / 2), size * 0.75 + 6);
+  mesh.boundingSphere = new THREE.Sphere(new THREE.Vector3(x0 + size / 2, heightAt(x0 + size / 2, z0 + size / 2) + 1, z0 + size / 2), size * 0.75 + 8);
   mesh.renderOrder = 5;
   mesh.castShadow = false;
   mesh.receiveShadow = false;
@@ -154,6 +164,7 @@ export function buildGrass(
   size: number,
   seed: number,
   biomeAt: (x: number, z: number) => BiomeId,
+  heightAt: (x: number, z: number) => number,
   blocked: (x: number, z: number) => boolean,
 ): THREE.InstancedMesh | null {
   const rng = new Rng(seed);
@@ -180,7 +191,7 @@ export function buildGrass(
       dummy.scale.set(s, s * rng.range(0.7, 1.3), s);
       const shade = rng.next();
       if (n >= max || blocked(x, z)) continue;
-      dummy.position.set(x, 0, z);
+      dummy.position.set(x, heightAt(x, z), z);
       dummy.updateMatrix();
       mesh.setMatrixAt(n, dummy.matrix);
       mesh.setColorAt(n, col.copy(colA).lerp(colB, shade));
@@ -192,8 +203,123 @@ export function buildGrass(
     return null;
   }
   mesh.count = n;
-  mesh.boundingSphere = new THREE.Sphere(new THREE.Vector3(x0 + size / 2, 0.3, z0 + size / 2), size * 0.75);
+  mesh.boundingSphere = new THREE.Sphere(new THREE.Vector3(x0 + size / 2, heightAt(x0 + size / 2, z0 + size / 2) + 0.3, z0 + size / 2), size * 0.8 + 8);
   mesh.receiveShadow = true;
   mesh.name = 'grass';
   return mesh;
+}
+
+const decalMatte = new THREE.MeshStandardMaterial({
+  vertexColors: true, transparent: true, depthWrite: false, roughness: 0.95,
+  polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2,
+});
+const decalGloss = new THREE.MeshStandardMaterial({
+  vertexColors: true, transparent: true, depthWrite: false, roughness: 0.1, metalness: 0.25,
+  polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2,
+});
+addTerrainCutout(decalMatte);
+addTerrainCutout(decalGloss);
+
+const DECAL = {
+  pad: { a: new THREE.Color('#7a776d'), b: new THREE.Color('#57544c'), lift: 0.03, res: 2 },
+  field: { a: new THREE.Color('#2b231a'), b: new THREE.Color('#64523a'), lift: 0.025, res: 0.85 },
+  puddle: { a: new THREE.Color('#1a2022'), b: new THREE.Color('#25302f'), lift: 0.045, res: 0.6 },
+  scorch: { a: new THREE.Color('#131110'), b: new THREE.Color('#2a2622'), lift: 0.04, res: 0.6 },
+  spill: { a: new THREE.Color('#46661a'), b: new THREE.Color('#141310'), lift: 0.042, res: 0.6 },
+  tracks: { a: new THREE.Color('#1c1b19'), b: new THREE.Color('#2a2824'), lift: 0.06, res: 0.5 },
+} as const;
+
+interface DecalBuffers {
+  pos: number[];
+  col: number[];
+  idx: number[];
+}
+
+/**
+ * Ground marks for one chunk, draped over the height field on small grids and merged into one
+ * matte and one glossy (puddles) mesh. Shapes come from per-vertex alpha, so no textures.
+ */
+export function buildDecals(
+  decals: readonly Decal[],
+  heightAt: (x: number, z: number) => number,
+  waterDepth: (x: number, z: number) => number,
+): THREE.Mesh[] {
+  const matte: DecalBuffers = { pos: [], col: [], idx: [] };
+  const gloss: DecalBuffers = { pos: [], col: [], idx: [] };
+  const c = new THREE.Color();
+  for (const d of decals) {
+    const def = DECAL[d.kind];
+    const out = d.kind === 'puddle' ? gloss : matte;
+    const rng = new Rng(d.seed);
+    const s1 = rng.range(0, 6.3);
+    const s2 = rng.range(0, 6.3);
+    const oil = d.kind === 'spill' && rng.chance(0.4);
+    const nx = Math.max(2, Math.ceil(d.w / def.res) + 1);
+    const nz = Math.max(2, Math.ceil(d.d / def.res) + 1);
+    const cos = Math.cos(d.rot);
+    const sin = Math.sin(d.rot);
+    const base = out.pos.length / 3;
+    for (let j = 0; j < nz; j++) {
+      for (let i = 0; i < nx; i++) {
+        const u = (i / (nx - 1) - 0.5) * d.w;
+        const v = (j / (nz - 1) - 0.5) * d.d;
+        const x = d.x + u * cos + v * sin;
+        const z = d.z - u * sin + v * cos;
+        const edge = Math.min(d.w / 2 - Math.abs(u), d.d / 2 - Math.abs(v));
+        let a = 0;
+        let t = 0;
+        switch (d.kind) {
+          case 'pad':
+            t = (0.5 + 0.5 * Math.sin(u * 0.45 + s1) * Math.sin(v * 0.6 + s2)) * 0.6;
+            a = 0.95 * smoothstep(0, 0.6, edge);
+            break;
+          case 'field':
+            t = smoothstep(-0.2, 0.6, Math.sin((v * Math.PI * 2) / 1.7));
+            a = 0.94 * smoothstep(0, 1.4, edge);
+            break;
+          case 'tracks': {
+            const lane = Math.abs(Math.abs(v) - 0.75);
+            t = 0.5 + 0.5 * Math.sin(u * 9);
+            a = 0.55 * (1 - smoothstep(0.08, 0.22, lane)) * (1 - smoothstep(d.w * 0.3, d.w * 0.5, Math.abs(u)));
+            break;
+          }
+          default: {
+            const ang = Math.atan2(v, u);
+            const wob = 1 + 0.18 * Math.sin(ang * 3 + s1) + 0.1 * Math.sin(ang * 5 + s2);
+            const q = Math.hypot(u / (d.w / 2), v / (d.d / 2));
+            t = q;
+            const strength = d.kind === 'puddle' ? 0.82 : d.kind === 'scorch' ? 0.8 : 0.72;
+            a = strength * (1 - smoothstep(0.55 * wob, wob, q));
+          }
+        }
+        if (waterDepth(x, z) > 0) a = 0;
+        if (d.kind === 'spill' && oil) c.copy(def.b).lerp(def.a, 0.1 * t);
+        else c.copy(def.a).lerp(def.b, Math.min(1, t));
+        out.pos.push(x, heightAt(x, z) + def.lift, z);
+        out.col.push(c.r, c.g, c.b, a);
+      }
+    }
+    for (let j = 0; j < nz - 1; j++) {
+      for (let i = 0; i < nx - 1; i++) {
+        const k = base + j * nx + i;
+        out.idx.push(k, k + nx, k + 1, k + 1, k + nx, k + nx + 1);
+      }
+    }
+  }
+  const meshes: THREE.Mesh[] = [];
+  for (const [buf, mat] of [[matte, decalMatte], [gloss, decalGloss]] as const) {
+    if (!buf.idx.length) continue;
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute('position', new THREE.Float32BufferAttribute(buf.pos, 3));
+    geo.setAttribute('color', new THREE.Float32BufferAttribute(buf.col, 4));
+    geo.setIndex(buf.idx);
+    geo.computeVertexNormals();
+    geo.computeBoundingSphere();
+    const mesh = new THREE.Mesh(geo, mat);
+    mesh.receiveShadow = true;
+    mesh.name = 'decals';
+    mesh.userData.disposable = true;
+    meshes.push(mesh);
+  }
+  return meshes;
 }

@@ -155,6 +155,7 @@ export const PIECES = {
     footprint: { w: 0.85, d: 0.7, h: 0.55 }, storageSlots: 1, hopper: 'chemicals', needsPower: true,
     description: 'A nozzle that coughs burning chemicals down a cone. Needs power and fuel.',
   },
+
 } as const satisfies Record<string, PieceDef>;
 
 export type PieceId = keyof typeof PIECES;

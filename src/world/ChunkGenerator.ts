@@ -3,6 +3,8 @@ import type { ContainerId } from '../data/loot';
 import type { NodeId } from '../data/nodes';
 import { Rng } from '../core/random';
 import type { BiomeId, Biomes } from './Biomes';
+import type { HeightField, Pad } from './Height';
+import type { Decal, Regions } from './Regions';
 
 export type Spawn =
   | { kind: 'node'; uid: string; node: NodeId; x: number; z: number; rot: number; seed: number }
@@ -22,6 +24,10 @@ export interface ChunkPlan {
   cz: number;
   spawns: Spawn[];
   gas: GasZone[];
+  /** Ground levelled under structures; read by `HeightField` when it fills this chunk's cache. */
+  pads: Pad[];
+  /** Marks draped on the ground: yard concrete, fields, puddles, tyre tracks, scorches, spills. */
+  decals: Decal[];
 }
 
 type Entry = { w: number; node?: NodeId; container?: ContainerId; prop?: string };
@@ -68,14 +74,15 @@ const TABLES: Record<BiomeId, { density: number; entries: Entry[] }> = {
   },
 };
 
+/** Stray ruins out between the planned settlements (towns, yards and farms bring their own). */
 const STRUCTURES: Record<BiomeId, { model: string; chance: number; minDist: number }[]> = {
-  deadwood: [{ model: 'structure.ruinHouse', chance: 0.08, minDist: 30 }],
-  suburb: [{ model: 'structure.ruinHouse', chance: 0.42, minDist: 30 }],
+  deadwood: [{ model: 'structure.ruinHouse', chance: 0.06, minDist: 30 }],
+  suburb: [{ model: 'structure.ruinHouse', chance: 0.14, minDist: 30 }],
   industrial: [
-    { model: 'structure.labRuin', chance: 0.26, minDist: 70 },
-    { model: 'structure.ruinHouse', chance: 0.15, minDist: 30 },
+    { model: 'structure.labRuin', chance: 0.1, minDist: 70 },
+    { model: 'structure.ruinHouse', chance: 0.06, minDist: 30 },
   ],
-  toxic: [{ model: 'structure.labRuin', chance: 0.4, minDist: 70 }],
+  toxic: [{ model: 'structure.labRuin', chance: 0.18, minDist: 70 }],
 };
 
 const STRUCTURE_RADIUS: Record<string, number> = { 'structure.ruinHouse': 5.2, 'structure.labRuin': 7 };
@@ -86,28 +93,87 @@ export function chunkSeed(seed: number, cx: number, cz: number): number {
 }
 
 /** Deterministic content for one chunk. Same seed + chunk coords always give the same plan. */
-export function generateChunk(seed: number, biomes: Biomes, cx: number, cz: number): ChunkPlan {
-  const { chunkSize: S, halfSize, starterClearRadius, roadZ, roadWidth } = CONFIG.world;
+export function generateChunk(seed: number, biomes: Biomes, height: HeightField, regions: Regions, cx: number, cz: number): ChunkPlan {
+  const { chunkSize: S, starterClearRadius } = CONFIG.world;
   const rng = new Rng(chunkSeed(seed, cx, cz));
   const x0 = cx * S;
   const z0 = cz * S;
   const spawns: Spawn[] = [];
   const gas: GasZone[] = [];
+  const pads: Pad[] = [];
+  const decals: Decal[] = [];
   const taken: { x: number; z: number; r: number }[] = [];
   let n = 0;
   const uid = () => `${cx},${cz}:${n++}`;
+  const inside = (x: number, z: number) => x >= x0 && x < x0 + S && z >= z0 && z < z0 + S;
 
-  const free = (x: number, z: number, r: number, onRoad = false): boolean => {
-    if (Math.abs(x) > halfSize - r || Math.abs(z) > halfSize - r) return false;
-    if (Math.hypot(x, z) < starterClearRadius + r) return false;
-    if (!onRoad && Math.abs(z - roadZ) < roadWidth / 2 + r + 0.4) return false;
+  const dry = (x: number, z: number, r: number) =>
+    [[0, 0], [r, 0], [-r, 0], [0, r], [0, -r]].every(([dx, dz]) => height.baseWaterDepth(x + dx, z + dz) < -0.3);
+  const clear = (x: number, z: number, r: number) => {
     for (const t of taken) if (Math.hypot(t.x - x, t.z - z) < t.r + r + 0.6) return false;
     return true;
   };
+  /** Scatter rules: off roads, out of planned yards / fields / lots, not on steep or wet ground. */
+  const free = (x: number, z: number, r: number, onRoad = false): boolean => {
+    if (Math.hypot(x, z) < starterClearRadius + r) return false;
+    if (!onRoad && regions.clearance(x, z, r + 1) < r + 0.4) return false;
+    if (!onRoad && regions.blocked(x, z, r)) return false;
+    if (!onRoad && height.baseSlopeDeg(x, z) > 40) return false;
+    if (!clear(x, z, r)) return false;
+    return height.baseWaterDepth(x, z) <= -0.3;
+  };
+
+  // Bridges first: nothing else spawns on a deck.
+  for (const b of height.roadBridgesIn(cx, cz)) {
+    spawns.push({ kind: 'prop', model: `prop.roadBridge.${b.length}`, x: b.x, z: b.z, rot: b.rot, seed: rng.int(0, 1e9) });
+    taken.push({ x: b.x, z: b.z, r: b.length / 2 });
+  }
+  for (const c of height.crossingsIn(x0, z0, S)) {
+    spawns.push({ kind: 'prop', model: `prop.footbridge.${c.length}`, x: c.x, z: c.z, rot: Math.atan2(-c.nz, c.nx), seed: rng.int(0, 1e9) });
+    taken.push({ x: c.x, z: c.z, r: c.hl });
+  }
+
+  // The pieces of towns, yards and farms that land in this chunk.
+  for (const reg of regions.regionsNear(x0 + S / 2, z0 + S / 2)) {
+    for (const p of reg.pads) {
+      if (!inside(p.x, p.z)) continue;
+      const y = height.padHeight(p.x, p.z, p.hw, p.hd, 4);
+      if (y !== null && dry(p.x, p.z, Math.max(p.hw, p.hd))) pads.push({ ...p, y, blend: 8 });
+    }
+    for (const d of reg.decals) if (inside(d.x, d.z)) decals.push(d);
+    for (const it of reg.items) {
+      if (!inside(it.x, it.z)) continue;
+      if (!dry(it.x, it.z, it.r) || regions.clearance(it.x, it.z, it.r + 1) < it.r * 0.6) continue;
+      const seedV = rng.int(0, 1e9);
+      switch (it.kind) {
+        case 'structure': {
+          const y = height.padHeight(it.x, it.z, it.r, it.r, 3);
+          if (y === null) continue;
+          spawns.push({ kind: 'structure', uid: it.uid, model: it.model, x: it.x, z: it.z, rot: it.rot, seed: seedV });
+          pads.push({ x: it.x, z: it.z, hw: it.r + 0.4, hd: it.r + 0.4, y, blend: 7 });
+          if (it.model === 'structure.labRuin') gas.push({ x: it.x, z: it.z, ...LAB_GAS });
+          break;
+        }
+        case 'node':
+          spawns.push({ kind: 'node', uid: it.uid, node: it.node, x: it.x, z: it.z, rot: it.rot, seed: seedV });
+          break;
+        case 'container':
+          spawns.push({ kind: 'container', uid: it.uid, container: it.container, x: it.x, z: it.z, rot: it.rot, seed: seedV });
+          break;
+        default:
+          spawns.push({ kind: 'prop', model: it.model, x: it.x, z: it.z, rot: it.rot, seed: seedV });
+      }
+      taken.push({ x: it.x, z: it.z, r: it.r });
+    }
+    // Planned pieces just over the border still keep this chunk's scatter off them.
+    for (const it of reg.items) {
+      if (!inside(it.x, it.z) && it.x > x0 - 8 && it.x < x0 + S + 8 && it.z > z0 - 8 && it.z < z0 + S + 8) taken.push({ x: it.x, z: it.z, r: it.r });
+    }
+  }
 
   const center = biomes.sample(x0 + S / 2, z0 + S / 2);
 
-  // Structure first, so scatter flows around it.
+  // A stray ruin, so scatter flows around it.
   const roll = rng.next();
   let acc = 0;
   for (const s of STRUCTURES[center.biome]) {
@@ -116,8 +182,10 @@ export function generateChunk(seed: number, biomes: Biomes, cx: number, cz: numb
     const r = STRUCTURE_RADIUS[s.model];
     const x = x0 + S / 2 + rng.range(-S / 2 + r + 1, S / 2 - r - 1);
     const z = z0 + S / 2 + rng.range(-S / 2 + r + 1, S / 2 - r - 1);
-    if (Math.hypot(x, z) > s.minDist && free(x, z, r)) {
+    const y = Math.hypot(x, z) > s.minDist && free(x, z, r) && dry(x, z, r + 2) ? height.padHeight(x, z, r, r) : null;
+    if (y !== null) {
       spawns.push({ kind: 'structure', uid: uid(), model: s.model, x, z, rot: rng.int(0, 3) * (Math.PI / 2), seed: rng.int(0, 1e9) });
+      pads.push({ x, z, hw: r + 0.4, hd: r + 0.4, y, blend: 7 });
       taken.push({ x, z, r });
       if (s.model === 'structure.labRuin') gas.push({ x, z, ...LAB_GAS });
     }
@@ -128,27 +196,64 @@ export function generateChunk(seed: number, biomes: Biomes, cx: number, cz: numb
     gas.push({ x: x0 + rng.range(6, S - 6), z: z0 + rng.range(6, S - 6), r: rng.range(6, 10), intensity: 0.6 });
   }
 
-  // Wrecks and barriers along the road.
-  if (roadZ >= z0 && roadZ < z0 + S && Math.abs(x0 + S / 2) > 34) {
-    if (rng.chance(0.55)) {
-      const x = x0 + rng.range(4, S - 4);
-      const z = roadZ + rng.range(-1.6, 1.6);
+  // Wrecks, barriers and tyre tracks along whatever road runs through here.
+  for (const road of regions.roadsIn(cx, cz)) {
+    const pts: number[] = [];
+    for (let k = 0; k < road.n - 1; k++) if (inside(road.pts[k * 2], road.pts[k * 2 + 1])) pts.push(k);
+    if (!pts.length || Math.hypot(x0 + S / 2, z0 + S / 2) < 40) continue;
+    const at = () => {
+      const k = pts[rng.int(0, pts.length - 1)];
+      const ax = road.pts[k * 2];
+      const az = road.pts[k * 2 + 1];
+      const dx = road.pts[k * 2 + 2] - ax;
+      const dz = road.pts[k * 2 + 3] - az;
+      const len = Math.hypot(dx, dz) || 1;
+      return { x: ax, z: az, tx: dx / len, tz: dz / len };
+    };
+    const busy = road.kind === 'highway' ? 1 : 0.6;
+    if (rng.chance(0.4 * busy)) {
+      const p = at();
+      const off = rng.range(-1.6, 1.6);
+      const x = p.x - p.tz * off;
+      const z = p.z + p.tx * off;
       if (free(x, z, 2.7, true)) {
-        spawns.push({ kind: 'node', uid: uid(), node: 'car', x, z, rot: rng.sign() * Math.PI / 2 + rng.range(-0.4, 0.4) + Math.PI / 2, seed: rng.int(0, 1e9) });
+        spawns.push({ kind: 'node', uid: uid(), node: 'car', x, z, rot: Math.atan2(p.tx, p.tz) + (rng.chance(0.5) ? Math.PI : 0) + rng.range(-0.4, 0.4), seed: rng.int(0, 1e9) });
         taken.push({ x, z, r: 2.7 });
       }
     }
-    if (rng.chance(0.5)) {
-      const x = x0 + rng.range(2, S - 2);
-      const z = roadZ + rng.range(-2.4, 2.4);
+    if (rng.chance(0.35 * busy)) {
+      const p = at();
+      const off = rng.range(-2.4, 2.4);
+      const x = p.x - p.tz * off;
+      const z = p.z + p.tx * off;
       if (free(x, z, 1.2, true)) {
-        spawns.push({ kind: 'prop', model: 'prop.barrier', x, z, rot: Math.PI / 2 + rng.range(-0.3, 0.3), seed: rng.int(0, 1e9) });
+        spawns.push({ kind: 'prop', model: 'prop.barrier', x, z, rot: Math.atan2(p.tx, p.tz) + Math.PI / 2 + rng.range(-0.3, 0.3), seed: rng.int(0, 1e9) });
         taken.push({ x, z, r: 1.2 });
       }
     }
+    if (rng.chance(0.45)) {
+      const p = at();
+      const off = rng.range(-1.4, 1.4);
+      decals.push({ kind: 'tracks', x: p.x - p.tz * off, z: p.z + p.tx * off, rot: Math.atan2(-p.tz, p.tx), w: rng.range(7, 14), d: 2.1, seed: rng.int(0, 1e9) });
+    }
+    if (rng.chance(0.3)) {
+      const p = at();
+      const off = (road.width / 2 + rng.range(0.5, 2)) * rng.sign();
+      decals.push({ kind: 'puddle', x: p.x - p.tz * off, z: p.z + p.tx * off, rot: rng.range(0, 6.3), w: rng.range(1.6, 3.4), d: rng.range(1.2, 2.6), seed: rng.int(0, 1e9) });
+    }
   }
 
-  const count = Math.round(TABLES[center.biome].density * (0.85 + center.danger * 0.3));
+  // Loose marks: puddles in the dips, old burns, and spills where the chemicals ran.
+  for (let k = rng.int(0, 2); k > 0; k--) {
+    const x = x0 + rng.range(3, S - 3);
+    const z = z0 + rng.range(3, S - 3);
+    const kind = center.biome === 'industrial' || center.biome === 'toxic' ? (rng.chance(0.6) ? 'spill' : 'scorch') : rng.chance(0.55) ? 'puddle' : 'scorch';
+    if (height.baseWaterDepth(x, z) > -0.4 || regions.blocked(x, z, 1)) continue;
+    const w = rng.range(1.8, 4.2);
+    decals.push({ kind, x, z, rot: rng.range(0, 6.3), w, d: w * rng.range(0.7, 1), seed: rng.int(0, 1e9) });
+  }
+
+  const count = Math.round(TABLES[center.biome].density * (0.85 + Math.min(center.danger, 1.5) * 0.3));
   for (let i = 0, tries = 0; i < count && tries < count * 4; tries++) {
     const px = x0 + rng.range(0, S);
     const pz = z0 + rng.range(0, S);
@@ -169,7 +274,7 @@ export function generateChunk(seed: number, biomes: Biomes, cx: number, cz: numb
     i++;
   }
 
-  return { cx, cz, spawns, gas };
+  return { cx, cz, spawns, gas, pads, decals };
 }
 
 function pickWeighted(rng: Rng, entries: Entry[]): Entry {

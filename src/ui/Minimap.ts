@@ -5,10 +5,10 @@ import type { World } from '../world/World';
 import type { Building } from '../gameplay/Building';
 import type { Horde } from '../gameplay/Horde';
 import { el, q } from './dom';
+import type { MapTiles } from './MapTiles';
 
 const SIZE = 196;
 const RANGE = 58;
-const MAP_RES = 2;
 const REVEAL_RADIUS = 34;
 
 /** Top-right minimap, rotated so "up" is the camera's forward. Unexplored ground stays dark. */
@@ -18,19 +18,15 @@ export class Minimap {
   private readonly ctx: CanvasRenderingContext2D;
   private readonly caption: HTMLElement;
   private readonly threat: HTMLElement;
-  private readonly base: HTMLCanvasElement;
-  private readonly explored: HTMLCanvasElement;
-  private readonly composite: HTMLCanvasElement;
-  private readonly mapPx: number;
   private revealTimer = 0;
   private lastCaption = '';
-  private dirty = true;
 
   constructor(
     parent: HTMLElement,
     private readonly world: World,
     private readonly building: Building,
     private readonly horde: Horde,
+    private readonly tiles: MapTiles,
   ) {
     this.root = el('div', 'minimap');
     this.root.innerHTML = `<canvas></canvas><div class="minimap-caption"><span class="mm-biome"></span><span class="mm-threat"></span></div>`;
@@ -43,78 +39,14 @@ export class Minimap {
     this.ctx.scale(dpr, dpr);
     this.caption = q(this.root, '.mm-biome');
     this.threat = q(this.root, '.mm-threat');
-
-    const half = CONFIG.world.halfSize;
-    this.mapPx = Math.round((half * 2) / MAP_RES);
-    this.base = this.bake();
-    this.explored = document.createElement('canvas');
-    this.explored.width = this.explored.height = this.mapPx;
-    this.composite = document.createElement('canvas');
-    this.composite.width = this.composite.height = this.mapPx;
-  }
-
-  private bake(): HTMLCanvasElement {
-    const half = CONFIG.world.halfSize;
-    const c = document.createElement('canvas');
-    c.width = c.height = this.mapPx;
-    const ctx = c.getContext('2d')!;
-    const img = ctx.createImageData(this.mapPx, this.mapPx);
-    const col = new THREE.Color();
-    for (let py = 0; py < this.mapPx; py++) {
-      for (let px = 0; px < this.mapPx; px++) {
-        const x = -half + (px + 0.5) * MAP_RES;
-        const z = -half + (py + 0.5) * MAP_RES;
-        this.world.biomes.groundColor(x, z, col);
-        const t = this.world.biomes.toxicity(x, z);
-        col.convertLinearToSRGB();
-        const i = (py * this.mapPx + px) * 4;
-        img.data[i] = Math.min(255, col.r * 255 * 1.25 + t * 20);
-        img.data[i + 1] = Math.min(255, col.g * 255 * 1.25 + t * 60);
-        img.data[i + 2] = Math.min(255, col.b * 255 * 1.25);
-        img.data[i + 3] = 255;
-      }
-    }
-    ctx.putImageData(img, 0, 0);
-    const { roadZ, roadWidth } = CONFIG.world;
-    ctx.fillStyle = 'rgba(30, 30, 32, 0.95)';
-    ctx.fillRect(0, (roadZ - roadWidth / 2 + half) / MAP_RES, this.mapPx, roadWidth / MAP_RES);
-    return c;
-  }
-
-  private reveal(x: number, z: number): void {
-    const half = CONFIG.world.halfSize;
-    const ctx = this.explored.getContext('2d')!;
-    const px = (x + half) / MAP_RES;
-    const pz = (z + half) / MAP_RES;
-    const r = REVEAL_RADIUS / MAP_RES;
-    const g = ctx.createRadialGradient(px, pz, r * 0.55, px, pz, r);
-    g.addColorStop(0, 'rgba(0,0,0,1)');
-    g.addColorStop(1, 'rgba(0,0,0,0)');
-    ctx.fillStyle = g;
-    ctx.beginPath();
-    ctx.arc(px, pz, r, 0, Math.PI * 2);
-    ctx.fill();
-    this.dirty = true;
-  }
-
-  private rebuildComposite(): void {
-    const ctx = this.composite.getContext('2d')!;
-    ctx.globalCompositeOperation = 'source-over';
-    ctx.clearRect(0, 0, this.mapPx, this.mapPx);
-    ctx.drawImage(this.explored, 0, 0);
-    ctx.globalCompositeOperation = 'source-in';
-    ctx.drawImage(this.base, 0, 0);
-    ctx.globalCompositeOperation = 'source-over';
-    this.dirty = false;
   }
 
   update(dt: number, player: THREE.Vector3, facing: number, camForward: THREE.Vector3): void {
     this.revealTimer -= dt;
     if (this.revealTimer <= 0) {
       this.revealTimer = 0.4;
-      this.reveal(player.x, player.z);
+      this.tiles.reveal(player.x, player.z, REVEAL_RADIUS);
     }
-    if (this.dirty) this.rebuildComposite();
 
     const s = this.world.sample(player.x, player.z);
     const caption = `${BIOME_LABEL[s.biome].toUpperCase()}|${Math.round(s.danger * 100)}`;
@@ -126,7 +58,6 @@ export class Minimap {
     }
 
     const ctx = this.ctx;
-    const half = CONFIG.world.halfSize;
     const scale = SIZE / 2 / RANGE;
     const rot = -Math.PI / 2 - Math.atan2(camForward.z, camForward.x);
 
@@ -143,8 +74,8 @@ export class Minimap {
     ctx.scale(scale, scale);
     ctx.translate(-player.x, -player.z);
 
-    ctx.imageSmoothingEnabled = true;
-    ctx.drawImage(this.composite, -half, -half, half * 2, half * 2);
+    const view = RANGE + 4;
+    this.tiles.draw(ctx, player.x - view, player.z - view, player.x + view, player.z + view);
 
     ctx.strokeStyle = 'rgba(242, 183, 5, 0.85)';
     ctx.lineWidth = 1.2 / scale * 1.6;

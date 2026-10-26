@@ -22,7 +22,7 @@ export class CameraRig {
 
   constructor(aspect: number) {
     const c = CONFIG.camera;
-    this.camera = new THREE.PerspectiveCamera(c.fov, aspect, 0.5, 400);
+    this.camera = new THREE.PerspectiveCamera(c.fov, aspect, 0.5, 520);
     const yaw = c.yawDeg * DEG2RAD;
     const pitch = c.pitchDeg * DEG2RAD;
     this.offsetDir.set(Math.sin(yaw) * Math.cos(pitch), Math.sin(pitch), Math.cos(yaw) * Math.cos(pitch));
@@ -97,8 +97,7 @@ export class CameraRig {
       this.lead.set(aim.x - target.x, 0, aim.z - target.z).multiplyScalar(c.lookAhead);
       if (this.lead.length() > c.maxLookAhead) this.lead.setLength(c.maxLookAhead);
     }
-    const groundY = Math.abs(target.y - 1.0) < 0.2 ? target.y - 1.0 : target.y;
-    this.desiredFocus.copy(target).setY(groundY + 1.0).add(this.lead);
+    this.desiredFocus.copy(target).setY(target.y + 1.0).add(this.lead);
     this.focus.lerp(this.desiredFocus, dampFactor(c.followSharpness, dt));
 
     this.applyTransform();

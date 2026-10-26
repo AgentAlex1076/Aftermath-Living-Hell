@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { CONFIG } from '../data/config';
 import { FLOORABLE_TAG, HALF_TAG, type CollisionWorld } from '../physics/Collision';
+import { CLIFF_TAG, WATER_TAG, type HeightField } from '../world/Height';
 import { BUILD_TAG, DEPLOY_TAG } from './Building';
 
 const R = CONFIG.raid.fieldRadius;
@@ -14,14 +15,16 @@ const DIRS: [number, number, number][] = [
 ];
 
 /** Bits from `CollisionWorld.tagMaskAt`: 1 = untagged, then one per tag in this order. */
-const TAGS = [FLOORABLE_TAG, HALF_TAG, BUILD_TAG, DEPLOY_TAG];
+const TAGS = [FLOORABLE_TAG, HALF_TAG, BUILD_TAG, DEPLOY_TAG, CLIFF_TAG, WATER_TAG];
 const SOLID = 1;
 const HALF = 4;
 const BUILT = 8 | 16;
+const CLIFF = 32;
+const WATER = 64;
 /** Which mask bits block each kind of mover. */
-const BLOCKS_WALK = SOLID | HALF | BUILT;
-const BLOCKS_CRAWL = SOLID | BUILT;
-const BLOCKS_CLIMB = SOLID;
+const BLOCKS_WALK = SOLID | HALF | BUILT | CLIFF | WATER;
+const BLOCKS_CRAWL = SOLID | BUILT | CLIFF | WATER;
+const BLOCKS_CLIMB = SOLID | WATER;
 
 export type FlowMode = 'walk' | 'crawl' | 'climb';
 
@@ -42,7 +45,7 @@ export class FlowField {
   private cooldown = 0;
   debug: THREE.LineSegments | null = null;
 
-  constructor(private readonly collision: CollisionWorld) {
+  constructor(private readonly collision: CollisionWorld, private readonly height?: HeightField) {
     const cells = N * N;
     collision.setWatch(R + CELL * 2);
     this.masks = new Uint8Array(cells);
@@ -100,9 +103,9 @@ export class FlowField {
         this.masks[iz * N + ix] = this.collision.tagMaskAt((ix - GOAL) * CELL, (iz - GOAL) * CELL, CELL * 0.42, TAGS);
       }
     }
-    integrate(this.masks, BLOCKS_WALK, this.walkCost, this.walkDir);
-    integrate(this.masks, BLOCKS_CRAWL, this.crawlCost, this.crawlDir);
-    integrate(this.masks, BLOCKS_CLIMB, this.climbCost, this.climbDir);
+    integrate(this.masks, BLOCKS_WALK, this.walkCost, this.walkDir, this.height, 1);
+    integrate(this.masks, BLOCKS_CRAWL, this.crawlCost, this.crawlDir, this.height, 1);
+    integrate(this.masks, BLOCKS_CLIMB, this.climbCost, this.climbDir, this.height, 0.28);
     if (this.debug?.visible) this.rebuildDebug();
   }
 
@@ -133,7 +136,8 @@ export class FlowField {
         const x = (ix - GOAL) * CELL;
         const z = (iz - GOAL) * CELL;
         const blocked = this.walkCost[i] >= 1e8;
-        pts.push(x, 0.12, z, x + dx * CELL * 0.7, 0.12, z + dz * CELL * 0.7);
+        const y = (this.height?.at(x, z) ?? 0) + 0.12;
+        pts.push(x, y, z, x + dx * CELL * 0.7, y, z + dz * CELL * 0.7);
         if (blocked) cols.push(1, 0.2, 0.15, 1, 0.2, 0.15);
         else cols.push(0.2, 1, 0.35, 1, 0.85, 0.15);
       }
@@ -146,7 +150,7 @@ export class FlowField {
   }
 }
 
-function integrate(masks: Uint8Array, blocks: number, cost: Float32Array, dir: Float32Array): void {
+function integrate(masks: Uint8Array, blocks: number, cost: Float32Array, dir: Float32Array, height?: HeightField, climbMul = 1): void {
   const blocked = new Uint8Array(N * N);
   for (let i = 0; i < blocked.length; i++) blocked[i] = masks[i] & blocks ? 1 : 0;
 
@@ -227,7 +231,13 @@ function integrate(masks: Uint8Array, blocks: number, cost: Float32Array, dir: F
       if (nx < 0 || nz < 0 || nx >= N || nz >= N) continue;
       const j = nz * N + nx;
       if (blocked[j]) continue;
-      const next = cost[i] + w;
+      let step = w;
+      if (height && climbMul > 0) {
+        const h0 = height.at((ix - GOAL) * CELL, (iz - GOAL) * CELL);
+        const h1 = height.at((nx - GOAL) * CELL, (nz - GOAL) * CELL);
+        step += Math.max(0, h1 - h0) * CONFIG.world.climbCost * climbMul;
+      }
+      const next = cost[i] + step;
       if (next < cost[j]) {
         cost[j] = next;
         push(j);

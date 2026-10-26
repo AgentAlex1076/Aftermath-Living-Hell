@@ -25,13 +25,14 @@ npm run dev        # then open http://localhost:5173
 | I or Tab | Backpack (drag to move, Shift-click to swap rows, right-click to use) |
 | Shift | Sprint (uses stamina) |
 | Space | Dodge roll (uses stamina) |
-| E | Interact / search containers / use the Crafting Table, Oven or Gun Bench / open doors and storage boxes |
-| B | Build mode: Q switches Structure / Traps / Power, 1–7 pick a piece, left mouse places, R rotates, B or Esc exits |
+| E | Interact / search containers / use the Crafting Table, Oven or Gun Bench / open doors and storage boxes / climb a ladder |
+| B | Build mode: Q switches Structure / Traps / Power / Utility, 1–7 pick a piece, left mouse places, R rotates, B or Esc exits |
 | E on a turret / generator / trap | Load a crafted gun, ammo, wood or chemicals |
 | Hammer equipped | Left mouse repairs the piece under the cursor, R upgrades it, hold X to demolish |
 | Mouse wheel | Zoom camera |
 | Esc | Pause (volume slider and mute are on the pause screen) |
-| M | Mute / unmute |
+| M | Full-screen map (drag to pan, wheel to zoom) |
+| N | Mute / unmute |
 | F1 or ` | Debug panel |
 | H | Hide the controls card |
 
@@ -75,7 +76,11 @@ except what you remember.
   inside `data/guns.ts`, the bench UI in `ui/GunBench.ts`, and firing in `Shooting.ts`.
   `Meta.ts` is the localStorage ledger, run history, Codex and score (`data/score.ts`).
 - `src/physics` — ground-plane collision on a spatial hash (circles + boxes).
-- `src/world` — biomes, terrain, deterministic chunk generation and streaming, gas clouds,
+- `src/world` — biomes, a 1 m `heightAt` field (`Height.ts`) with hills, terraces (with ramp gaps),
+  cliffs, rivers, lakes, craters, footbridge causeways and a flattened home pad, plus a cached water
+  surface per vertex (`waterDepth`, the shared `walk` modifier for slopes, roads and fords). Per-chunk
+  ground and water sheets (`Terrain.ts`), traversal links and ladder fitting (`Traversal.ts`),
+  deterministic chunk generation and streaming, gas clouds,
   the starter area around the hut, the Home Zone ring, interactables.
 - `src/ui` — HUD, hotbar, backpack, minimap, floating comic text, item icons rendered
   from the 3D models, start/pause/death screens, Codex, Ledger, debug panel, and the stylesheet.
