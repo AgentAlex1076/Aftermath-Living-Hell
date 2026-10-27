@@ -15,6 +15,7 @@ import type { Debris } from '../render/Debris';
 import type { FloatingText } from '../ui/FloatingText';
 import type { World } from '../world/World';
 import { BUILD_TAG, DEPLOY_TAG, type Building, type Piece } from './Building';
+import type { CureTarget } from './Cure';
 import type { FlowField, FlowMode } from './FlowField';
 import type { Inventory } from './Inventory';
 import { MutantFx } from './MutantFx';
@@ -70,6 +71,7 @@ export class Horde {
     private readonly onMauled: () => void,
     onAcid: () => void,
     private readonly traversal: Traversal,
+    private readonly cure: CureTarget,
   ) {
     for (const id of Object.keys(POOL) as EnemyId[]) {
       const list: Enemy[] = [];
@@ -81,6 +83,10 @@ export class Horde {
       this.pool.set(id, list);
     }
     this.fx = new MutantFx(scene, player, building, debris, floaters, onAcid, (x, z) => world.height.at(x, z));
+    this.fx.setSplash((x, z, damage) => {
+      if (!this.cure.attackable) return;
+      if (Math.hypot(x - this.cure.x, z - this.cure.z) < 1.35) this.cure.damage(damage);
+    });
     events.on('noise', ({ x, z, radius }) => this.hear(x, z, radius));
   }
 
@@ -208,8 +214,12 @@ export class Horde {
   }
 
   /** Bullet or blast hit. Returns true if something died. */
-  hurt(e: Enemy, power: number, word = ''): boolean {
+  hurt(e: Enemy, power: number, word = '', fromPlayer = false): boolean {
     if (!e.alive) return false;
+    if (fromPlayer) {
+      e.grudge = CONFIG.cure.grudgeTime;
+      e.grudgeClose = false;
+    }
     const dead = e.hit(power);
     _p.set(e.position.x, e.position.y + e.def.height * 0.65 + e.lift, e.position.z);
     this.debris.burst(e.position.x, e.position.y + 0.9 + e.lift, e.position.z, e.def.debrisColor, dead ? 18 : 7);
@@ -225,7 +235,7 @@ export class Horde {
     const p = this.player;
     const e = this.findInCone(p.position, p.facing, CONFIG.gathering.reach + 0.15, CONFIG.gathering.coneDeg);
     if (!e) return false;
-    this.hurt(e, power);
+    this.hurt(e, power, '', true);
     return true;
   }
 
@@ -272,6 +282,19 @@ export class Horde {
     const structure = d.climbs ? null : this.building.pieceNear(e.position.x, e.position.z, CONFIG.raid.structureReach + d.radius);
     const canHitPlayer = level && toPlayer < d.attackRange + CONFIG.player.radius;
     const canHitWall = !!structure && this.building.distanceTo(structure, e.position.x, e.position.z) < CONFIG.raid.structureReach + 0.05;
+    const home = Math.hypot(e.position.x, e.position.z) < CONFIG.homeZone.radius + 2;
+    const objective = e.raid || home;
+    if (e.grudge > 0) {
+      e.grudge = Math.max(0, e.grudge - dt);
+      if (toPlayer < CONFIG.cure.grudgeClose) e.grudgeClose = true;
+      if (e.grudgeClose && toPlayer > CONFIG.cure.grudgeLeash) e.grudge = 0;
+    }
+    const nightAggro = CONFIG.raid.playerAggro * (1 + (CONFIG.horde.nightAggro - 1) * this.night);
+    const bubble = objective ? CONFIG.cure.aggro : nightAggro;
+    const provoked = toPlayer < bubble + (e.sticky ? CONFIG.cure.aggroStick : 0) || e.grudge > 0;
+    e.sticky = toPlayer < bubble + (e.sticky ? CONFIG.cure.aggroStick : 0);
+    const toCure = Math.hypot(this.cure.x - e.position.x, this.cure.z - e.position.z);
+    const canHitCure = this.cure.attackable && toCure < d.attackRange + CONFIG.cure.hitPad;
 
     if (e.state === 'attack') {
       e.attackT += dt / e.attackTime;
@@ -286,23 +309,26 @@ export class Horde {
       return;
     }
 
-    if (this.trySpecial(e, p, toPlayer, canHitWall ? structure : null)) return;
+    if (this.trySpecial(e, p, toPlayer, canHitWall ? structure : null, provoked, objective)) return;
 
-    if (e.cooldown <= 0 && (canHitPlayer || (canHitWall && (e.stuck > 0.35 || toPlayer > CONFIG.raid.playerAggro)))) {
-      const tx = canHitPlayer ? p.position.x : structure!.x;
-      const tz = canHitPlayer ? p.position.z : structure!.z;
+    const hitPlayer = canHitPlayer && provoked;
+    const hitCure = canHitCure && !hitPlayer;
+    const hitWall = canHitWall && !hitPlayer && !hitCure && (e.stuck > 0.35 || !provoked);
+    if (e.cooldown <= 0 && (hitPlayer || hitCure || hitWall)) {
+      e.focus = hitPlayer ? 'player' : hitCure ? 'cure' : 'wall';
+      const tx = e.focus === 'player' ? p.position.x : e.focus === 'cure' ? this.cure.x : structure!.x;
+      const tz = e.focus === 'player' ? p.position.z : e.focus === 'cure' ? this.cure.z : structure!.z;
       dampEnemyFacing(e, Math.atan2(tx - e.position.x, tz - e.position.z), dt);
-      e.beginAttack('melee', d.attackTime / (e.frenzied ? 1.2 : 1));
+      e.beginAttack(e.focus === 'player' ? 'melee' : 'smash', d.attackTime / (e.frenzied ? 1.2 : 1));
       sfx('enemy.swipe', { x: e.position.x, z: e.position.z, volume: 0.7, pitch: d.radius > 0.6 ? 0.7 : 1 });
       return;
     }
 
     let wx = 0;
     let wz = 0;
-    const hold = this.holdDistance(e, toPlayer);
-    const aggro = CONFIG.raid.playerAggro * (e.raid ? 1 : 1 + (CONFIG.horde.nightAggro - 1) * this.night);
+    const hold = provoked ? this.holdDistance(e, toPlayer) : 0;
     e.alertT = Math.max(0, e.alertT - dt);
-    const route = !level && !d.climbs && toPlayer < aggro * 2 ? this.traversal.route(e.position.x, e.position.y, e.position.z, p.position.y, CONFIG.traversal.mutantSeek) : null;
+    const route = provoked && !level && !d.climbs && toPlayer < bubble * 2 ? this.traversal.route(e.position.x, e.position.y, e.position.z, p.position.y, CONFIG.traversal.mutantSeek) : null;
     if (route) {
       const dx = route.at.x - e.position.x;
       const dz = route.at.z - e.position.z;
@@ -315,7 +341,7 @@ export class Horde {
       }
       wx = dx / dist;
       wz = dz / dist;
-    } else if (toPlayer < aggro || (hold > 0 && toPlayer < hold + 3)) {
+    } else if (provoked || (hold > 0 && toPlayer < hold + 3)) {
       const inv = toPlayer || 1;
       wx = (p.position.x - e.position.x) / inv;
       wz = (p.position.z - e.position.z) / inv;
@@ -324,14 +350,14 @@ export class Horde {
         wx *= toPlayer < hold * 0.7 ? -0.6 : 0;
         wz *= toPlayer < hold * 0.7 ? -0.6 : 0;
       }
-    } else if (e.raid) {
+    } else if (objective) {
       const mode: FlowMode = d.climbs ? 'climb' : d.slips ? 'crawl' : 'walk';
       const f = this.flow.sample(e.position.x, e.position.z, mode);
       wx = f.x;
       wz = f.z;
       if (wx === 0 && wz === 0) {
-        const tx = structure ? structure.x : 0;
-        const tz = structure ? structure.z : 0;
+        const tx = structure ? structure.x : this.cure.x;
+        const tz = structure ? structure.z : this.cure.z;
         const inv = Math.hypot(tx - e.position.x, tz - e.position.z) || 1;
         wx = (tx - e.position.x) / inv;
         wz = (tz - e.position.z) / inv;
@@ -421,24 +447,31 @@ export class Horde {
     return target > 0.2 ? 0.55 : 1;
   }
 
-  private trySpecial(e: Enemy, p: Player, toPlayer: number, wall: Piece | null): boolean {
+  private trySpecial(e: Enemy, p: Player, toPlayer: number, wall: Piece | null, provoked: boolean, objective: boolean): boolean {
     const d = e.def;
     if (e.specialT > 0) return false;
     if (d.spit) {
       let tx = 0;
       let tz = 0;
       let ok = false;
-      if (toPlayer <= d.spit.range && (e.raid || toPlayer < CONFIG.raid.playerAggro * 1.6)) {
+      if (provoked && toPlayer <= d.spit.range) {
         const lead = (toPlayer / d.spit.speed) * 0.5;
         tx = p.position.x + p.actualVelocity.x * lead;
         tz = p.position.z + p.actualVelocity.z * lead;
         ok = true;
-      } else if (e.raid) {
-        const piece = wall ?? this.building.pieceNear(e.position.x, e.position.z, d.spit.range * 0.75);
-        if (piece) {
-          tx = piece.x;
-          tz = piece.z;
+      } else if (objective) {
+        const toCure = Math.hypot(this.cure.x - e.position.x, this.cure.z - e.position.z);
+        if (toCure <= d.spit.range) {
+          tx = this.cure.x;
+          tz = this.cure.z;
           ok = true;
+        } else {
+          const piece = wall ?? this.building.pieceNear(e.position.x, e.position.z, d.spit.range * 0.75);
+          if (piece) {
+            tx = piece.x;
+            tz = piece.z;
+            ok = true;
+          }
         }
       }
       if (!ok) return false;
@@ -458,7 +491,9 @@ export class Horde {
     }
     if (d.slam) {
       const reachWall = !!wall && e.stuck > 0.25;
-      if (toPlayer > d.slam.radius * 0.75 && !reachWall) return false;
+      const nearCure = this.cure.attackable && Math.hypot(this.cure.x - e.position.x, this.cure.z - e.position.z) < d.slam.radius;
+      if (!provoked && !reachWall && !nearCure) return false;
+      if (provoked && toPlayer > d.slam.radius * 0.75 && !reachWall && !nearCure) return false;
       e.beginAttack('slam', d.slam.windup / 0.55);
       e.specialT = d.slam.every;
       this.fx.ring(e.position.x, e.position.z, d.slam.radius, '#e0302a', d.slam.windup);
@@ -485,11 +520,13 @@ export class Horde {
         return;
       default: {
         const mul = e.frenzied ? FRENZY.damageMul : 1;
-        if (canHitPlayer && !p.invulnerable) {
+        if (e.focus === 'player' && canHitPlayer && !p.invulnerable) {
           p.damage(d.damage * mul);
           this.onMauled();
           this.floaters.spawn(p.position.clone().setY(p.position.y + 1.7), d.radius > 0.6 ? 'CRACK!' : 'RIP!', 'word', '#e0302a');
           events.emit('camera:shake', { amount: 0.2 });
+        } else if (e.focus === 'cure' && this.cure.attackable) {
+          this.cure.damage(d.structureDamage * mul);
         } else if (wall) {
           this.building.damage(wall, d.structureDamage * mul);
         }
@@ -545,6 +582,7 @@ export class Horde {
       if (piece.def.kind === 'foundation') continue;
       if (this.building.distanceTo(piece, x, z) < s.radius * 0.8) this.building.damage(piece, s.structureDamage);
     }
+    if (this.cure.attackable && Math.hypot(this.cure.x - x, this.cure.z - z) < s.radius * 0.85) this.cure.damage(s.structureDamage);
   }
 
   private tickVent(e: Enemy, dt: number, p: Player, toPlayer: number): void {

@@ -1,10 +1,10 @@
-import type * as THREE from 'three';
+import * as THREE from 'three';
 import type { Rng } from '../core/random';
 import { CONFIG } from '../data/config';
 import type { PieceDef, TierId, WallShape } from '../data/buildables';
 import type { LocalCollider } from '../physics/Collision';
-import { box, cyl, group } from './build';
-import { mat, type MaterialKey } from './materials';
+import { box, cyl, group, mesh } from './build';
+import { mat, uniqueMat, type MaterialKey } from './materials';
 
 const B = CONFIG.building;
 const L = B.cell;
@@ -241,8 +241,69 @@ function buildDoor(tier: TierId, rng: Rng): THREE.Object3D {
   return g;
 }
 
+/** Corrugated sheet geometry reused across roof cells (same look as the old hut roof). */
+function corrugatedSheet(width: number, length: number): THREE.BufferGeometry {
+  const geo = new THREE.PlaneGeometry(width, length, 22, 1);
+  geo.rotateX(-Math.PI / 2);
+  const pos = geo.attributes.position;
+  for (let i = 0; i < pos.count; i++) {
+    pos.setY(i, Math.sin((pos.getX(i) / width) * Math.PI * 12) * 0.028);
+  }
+  geo.computeVertexNormals();
+  return geo;
+}
+
+const roofSheetCache = new Map<string, THREE.BufferGeometry>();
+function roofSheetGeo(width: number, length: number): THREE.BufferGeometry {
+  const key = `${width.toFixed(3)}:${length.toFixed(3)}`;
+  let g = roofSheetCache.get(key);
+  if (!g) {
+    g = corrugatedSheet(width, length);
+    roofSheetCache.set(key, g);
+  }
+  return g;
+}
+
+/** A pitched corrugated panel over one foundation cell. No ground collider — mutants walk underneath. */
+function buildRoof(tier: TierId, rng: Rng): THREE.Object3D {
+  const g = group('roof');
+  const rise = 0.55;
+  const overhang = 0.12;
+  const span = L / 2 + overhang;
+  const slopeLen = Math.hypot(span, rise) + 0.04;
+  const angle = Math.atan2(rise, span);
+  const sheetW = 1.05;
+  const sheetGeo = roofSheetGeo(sheetW, slopeLen);
+  const sheetKeys: MaterialKey[] =
+    tier === 'armored' ? ['iron', 'iron', 'metalDark'] : tier === 'scrap' ? SHEETS : ['rust', 'rustLight', 'corrugated', 'rust'];
+  const trim = tier === 'armored' ? 'hazardYellow' : tier === 'scrap' ? 'iron' : 'woodDark';
+  const sheetCount = Math.ceil((L + overhang * 2) / (sheetW * 0.92));
+  for (const side of [1, -1] as const) {
+    for (let i = 0; i < sheetCount; i++) {
+      const x = -(L / 2 + overhang) + sheetW / 2 + i * sheetW * 0.92;
+      const sheetMat = uniqueMat(rng.pick(sheetKeys));
+      sheetMat.side = THREE.DoubleSide;
+      sheetMat.shadowSide = THREE.DoubleSide;
+      g.add(
+        mesh(sheetGeo, sheetMat, {
+          pos: [x, rise / 2 + 0.04 + i * 0.003, side * (span / 2)],
+          rot: [side * angle, 0, rng.range(-0.015, 0.015)],
+        }),
+      );
+    }
+  }
+  g.add(box(L + overhang * 2, 0.1, 0.14, mat(trim), { pos: [0, rise + 0.02, 0] }));
+  if (tier === 'wood') {
+    for (const x of [-L / 2 + 0.08, L / 2 - 0.08]) g.add(box(0.1, rise, 0.1, mat('woodDark'), { pos: [x, rise / 2, 0] }));
+  } else if (tier === 'armored') {
+    g.add(box(L - 0.3, 0.05, 0.08, mat('hazardYellow'), { pos: [0, rise * 0.45, span * 0.4] }));
+  }
+  return g;
+}
+
 export function buildPiece(def: PieceDef, tier: TierId, rng: Rng): THREE.Object3D {
   if (def.kind === 'foundation') return buildFoundation(tier, rng);
+  if (def.kind === 'roof') return buildRoof(tier, rng);
   if (def.kind === 'door') return buildDoor(tier, rng);
   return buildWall(def.shape ?? 'full', tier, rng);
 }

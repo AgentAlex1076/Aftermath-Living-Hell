@@ -13,7 +13,7 @@ import type { Inventory } from './Inventory';
 const TOOL_NAME = { axe: 'HATCHET', pickaxe: 'PICKAXE', crowbar: 'CROWBAR', hammer: 'HAMMER' } as const;
 const NODE_SOUND: Record<string, string> = {
   deadTree: 'hit.wood', rock: 'hit.stone', rubble: 'hit.stone', scrapPile: 'hit.metal', car: 'hit.metal',
-  barrel: 'hit.metal', toxicBarrel: 'hit.metal', carcass: 'hit.flesh',
+  barrel: 'hit.metal', toxicBarrel: 'hit.metal', carcass: 'hit.flesh', fence: 'hit.wood', barrier: 'hit.stone',
 };
 const _p = new THREE.Vector3();
 
@@ -69,6 +69,8 @@ export class Gathering {
     const tool = this.inv.equippedTool;
     if (tool && (tool.kind === 'hammer' || tool.kind === 'axe' || tool.kind === 'pickaxe')) {
       if (this.buildToolHit()) return;
+      const chest = this.world.findContainerInCone(p.position, p.facing, g.reach, g.coneDeg);
+      if (chest && this.smashChest(chest)) return;
       if (tool.kind === 'hammer') return;
     }
     const node = this.world.findNodeInCone(p.position, p.facing, g.reach, g.coneDeg);
@@ -77,7 +79,8 @@ export class Gathering {
     const def = node.def;
     const melee = this.player.buff?.def.melee ?? 1;
     let power: number;
-    if (tool) power = (tool.kind === def.tool ? tool.power : tool.power * g.wrongToolMultiplier) * melee;
+    const rightTool = tool && (tool.kind === def.tool || def.tools?.includes(tool.kind));
+    if (tool) power = (rightTool ? tool.power : tool.power * g.wrongToolMultiplier) * melee;
     else power = g.handPower * def.handMultiplier * melee;
 
     _p.set(node.x, 1.3, node.z);
@@ -96,7 +99,7 @@ export class Gathering {
     const d = Math.hypot(dx, dz) || 1;
     this.debris.burst(node.x - (dx / d) * node.radius * 0.6, 0.9, node.z - (dz / d) * node.radius * 0.6, def.debrisColor, destroyed ? 26 : 9, -dx / d, -dz / d);
     this.floaters.spawn(_p, def.hitWords[Math.floor(Math.random() * def.hitWords.length)], 'word');
-    if (tool && tool.kind !== def.tool) this.floaters.spawn(_p.clone().setY(0.6), 'WRONG TOOL', 'warn');
+    if (tool && !rightTool) this.floaters.spawn(_p.clone().setY(0.6), 'WRONG TOOL', 'warn');
     events.emit('camera:shake', { amount: destroyed ? 0.28 : 0.1 });
     if (destroyed) this.floaters.spawn(_p.clone().setY(1.9), def.toxic ? 'SPLOOSH!' : 'KRAKA-DOOM!', 'word', '#f2b705', 0.08);
     if (def.toxic) {
@@ -126,6 +129,24 @@ export class Gathering {
       events.emit('toast', { text: 'Backpack full. Drop or use something.', tone: 'warn' });
     }
     return leftover;
+  }
+
+  /** Smash an emptied crate/chest for scrap. Toast if it still has loot. */
+  private smashChest(c: ContainerInstance): boolean {
+    if (!c.breakable) return false;
+    const at = new THREE.Vector3(c.x, 1.2, c.z);
+    if (this.world.contentsOf(c).length > 0) {
+      events.emit('toast', { text: 'Empty it before you smash it.', tone: 'warn' });
+      this.floaters.spawn(at, 'NOT EMPTY', 'warn');
+      return true;
+    }
+    if (!this.world.smashContainer(c)) return false;
+    this.debris.burst(c.x, 0.6, c.z, '#c4a574', 18);
+    this.floaters.spawn(at, 'SMASH!', 'word', '#f2b705');
+    sfx('build.break', { x: c.x, z: c.z, param: 0, volume: 0.75 });
+    events.emit('camera:shake', { amount: 0.22 });
+    this.give([{ item: 'wood', qty: 1 }, { item: 'scrap', qty: 1 }], at);
+    return true;
   }
 
   search(c: ContainerInstance): void {

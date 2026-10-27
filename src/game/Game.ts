@@ -18,6 +18,9 @@ import { PlayerAnimator } from '../entities/PlayerAnimator';
 import { allPieceIds, hopperAccepts, hopperHint, PIECES, pieceModel } from '../data/buildables';
 import { Building, type Piece } from '../gameplay/Building';
 import { BuildMode } from '../gameplay/BuildMode';
+import { Cure } from '../gameplay/Cure';
+import { Stations } from '../gameplay/Stations';
+import { seedStarterHut } from '../gameplay/StarterHut';
 import { Defenses } from '../gameplay/Defenses';
 import { Crafting } from '../gameplay/Crafting';
 import { FlowField } from '../gameplay/FlowField';
@@ -112,6 +115,12 @@ export class Game {
   private readonly buildMode: BuildMode;
   private readonly buildUI: BuildUI;
   readonly flow: FlowField;
+  private readonly cure: Cure;
+  private readonly stations: Stations;
+  private useVerb: string | null = null;
+  private useLabel = '';
+  private eDown = false;
+  private eTime = 0;
   readonly horde: Horde;
   readonly raid: Raid;
   readonly siege: Siege;
@@ -127,7 +136,6 @@ export class Game {
   private demolishHits = 0;
   /** Seconds left before scrap progress resets. */
   private demolishWindow = 0;
-  private shownBuildHint = false;
   private ovenGlow = 0;
   /** Metres waded since the last splash (and the noise it makes). */
   private wadeDist = 0;
@@ -170,7 +178,9 @@ export class Game {
   private readonly focusTarget = new THREE.Vector3();
   private readonly camForward = new THREE.Vector3();
   private readonly camRight = new THREE.Vector3();
-  private readonly occlusionTargets = [new THREE.Vector3(), new THREE.Vector3()];
+  private readonly occlusionTargets: THREE.Vector3[] = [];
+  private flashlightOn = false;
+  private readonly flashlight: THREE.SpotLight;
 
   constructor(appRoot: HTMLElement, uiRoot: HTMLElement) {
     registerModels();
@@ -215,6 +225,11 @@ export class Game {
     this.player.teleport(this.area.spawn.x, this.area.spawn.z, this.world.height.at(this.area.spawn.x, this.area.spawn.z));
     this.player.facing = this.player.prevFacing = Math.PI / 4;
     this.animator = new PlayerAnimator(model);
+    this.flashlight = new THREE.SpotLight('#ffe4b8', 0, 26, 0.42, 0.4, 1.15);
+    this.flashlight.castShadow = false;
+    this.flashlight.position.set(0.12, 1.48, 0.18);
+    this.flashlight.target.position.set(0.12, 1.15, 6);
+    model.add(this.flashlight, this.flashlight.target);
 
     this.focusTarget.copy(this.area.spawn).setY(this.world.height.at(this.area.spawn.x, this.area.spawn.z) + 1);
     this.rig.snapTo(this.focusTarget);
@@ -230,7 +245,6 @@ export class Game {
     );
     this.crafting = new Crafting(this.inventory, (r) => this.onCrafted(r));
     this.oven = new Oven(this.inventory);
-    const hut = this.area.interior;
     this.building = new Building({
       scene: this.scene,
       collision: this.collision,
@@ -241,12 +255,24 @@ export class Game {
       debris: this.debris,
       floaters: this.floaters,
       player: this.player,
-      noBuild: [{ minX: hut.minX, maxX: hut.maxX, minZ: hut.minZ, maxZ: hut.maxZ }],
+      noBuild: [],
       openStorage: (piece) => this.setInventoryOpen(true, 'storage', piece),
       storageGone: (piece) => {
         if (this.openStorage === piece) this.setInventoryOpen(false);
       },
     });
+    seedStarterHut(this.building);
+    this.cure = new Cure({
+      scene: this.scene,
+      lights: this.lights,
+      world: this.world,
+      building: this.building,
+      debris: this.debris,
+      floaters: this.floaters,
+      player: this.player,
+      onLost: () => this.die('The cure was lost. Contamination overwhelmed you.'),
+    });
+    this.stations = new Stations(this.area.stations, this.collision, this.world, this.floaters, this.player);
     this.buildMode = new BuildMode(this.scene, this.building);
     this.flow = new FlowField(this.collision, this.world.height);
     this.horde = new Horde(
@@ -255,6 +281,7 @@ export class Game {
       () => this.survival.noteCause('maul'),
       () => this.survival.noteCause('acid'),
       this.world.traversal,
+      this.cure,
     );
     this.shooting = new Shooting(
       this.scene, this.player, this.inventory, this.horde, this.building, this.debris, this.floaters, this.world.height,
@@ -283,6 +310,23 @@ export class Game {
     this.minimap = new Minimap(this.hud.root, this.world, this.building, this.horde, mapTiles);
     this.mapScreen = new MapScreen(uiRoot, this.world, this.building, mapTiles, () => this.setMapOpen(false));
     new HotbarView(this.hud.root, this.inventory, this.icons);
+    this.hud.onCameraControls({
+      fixed: () => {
+        this.rig.resetFixed();
+        this.hud.setCameraMode('fixed', false);
+        sfx('ui.click', { pitch: 1.1 });
+      },
+      free: () => {
+        this.rig.setFree(false);
+        this.hud.setCameraMode('free', false);
+        sfx('ui.click', { pitch: 1.2 });
+      },
+      lock: () => {
+        this.rig.toggleLock();
+        this.hud.setCameraMode(this.rig.mode, this.rig.locked);
+        sfx('ui.click', { pitch: this.rig.locked ? 0.85 : 1.25 });
+      },
+    });
     this.buildUI = new BuildUI(this.hud.root, this.building, this.inventory, this.icons, (i) => this.buildMode.setTab(i));
     this.inventoryView = new InventoryView(uiRoot, this.inventory, this.icons, (i) => this.gathering.use(i));
     this.craftingPanel = new CraftingPanel(this.inventoryView.side, this.crafting, this.inventory, this.icons, () => this.nearWorkbench());
@@ -354,6 +398,7 @@ export class Game {
           if (this.building.distanceTo(piece, this.player.position.x, this.player.position.z) < 14) this.building.damage(piece, piece.maxHp * 0.35);
         }
       },
+      crackCure: () => this.cure.damage(90),
       addAttention: (amount) => this.raid.addAttention(amount),
       crankSiren: () => this.crankSiren(),
       startRaid: () => this.raid.startNow(),
@@ -426,10 +471,6 @@ export class Game {
     this.hud.setCrosshair(0, 0, false);
 
     if (!this.inventory.slots.some((s) => s?.gun)) this.inventory.add('craftedGun', 1, makePipePistol());
-    window.setTimeout(() => events.emit('toast', { text: 'Your gear is in the crate by the door. Grab it.', tone: 'info' }), 700);
-    window.setTimeout(() => events.emit('toast', { text: 'Drag a gun part onto your pistol in the backpack to mod it.', tone: 'info' }), 2800);
-    window.setTimeout(() => events.emit('toast', { text: 'Stay close to the hut. Something is moving in the fog.', tone: 'warn' }), 5200);
-    window.setTimeout(() => events.emit('toast', { text: "Noise draws the horde. Crank the siren by the door when you're ready for them.", tone: 'info' }), 8200);
   }
 
   private setPaused(paused: boolean): void {
@@ -489,10 +530,6 @@ export class Game {
     this.buildMode.setActive(on);
     document.body.classList.toggle('building', on);
     this.hammerTarget = null;
-    if (on && !this.shownBuildHint) {
-      this.shownBuildHint = true;
-      events.emit('toast', { text: 'Foundations first. Q flips to traps and power.', tone: 'info' });
-    }
   }
 
   private isScrapTool(kind: string | undefined): boolean {
@@ -561,7 +598,19 @@ export class Game {
 
   private updateBuildMode(): void {
     const bm = this.buildMode;
-    if (this.input.wasPressed('buildTab')) bm.nextTab();
+    if (this.input.wasPressed('buildTab') && !this.cure.carried && !this.stations.carrying) bm.nextTab();
+    if (this.cure.carried || this.stations.carrying) {
+      if (this.input.wasPressed('reload')) this.stations.rotate();
+      const hit = this.hasGroundHit ? this.groundHit : null;
+      if (hit && this.stations.carrying) this.stations.preview(hit.x, hit.z);
+      if (hit && this.cure.carried) this.cure.preview(hit.x, hit.z);
+      if (hit && this.input.wasPressed('fire')) {
+        if (this.stations.carrying) this.stations.placeAt(hit.x, hit.z);
+        else this.cure.hangAt(hit.x, hit.z);
+      }
+      return;
+    }
+    this.cure.clearPreview();
     if (this.input.wasPressed('reload')) bm.rotate();
     bm.update(this.hasGroundHit ? this.groundHit : null);
     const pl = bm.placement;
@@ -653,8 +702,8 @@ export class Game {
   }
 
   private unlock(kind: 'enemy' | 'part' | 'buildable' | 'recipe', id: string, name: string): void {
-    if (!this.meta.note(kind, id)) return;
-    events.emit('toast', { text: `CODEX — ${name.toUpperCase()} logged.`, tone: 'info' });
+    this.meta.note(kind, id);
+    void name;
   }
 
   private scanParts(): void {
@@ -662,15 +711,19 @@ export class Game {
     for (const s of this.inventory.slots) {
       if (s && ITEMS[s.item].kind === 'gunPart') ids.push(s.item);
     }
-    const fresh = this.meta.noteMany('part', ids);
-    if (fresh.length === 1) {
-      events.emit('toast', { text: `CODEX — ${ITEMS[fresh[0] as ItemId].name.toUpperCase()} logged.`, tone: 'info' });
-    } else if (fresh.length > 1) {
-      events.emit('toast', { text: `CODEX — ${fresh.length} parts logged.`, tone: 'info' });
-    }
+    this.meta.noteMany('part', ids);
   }
 
   private syncHeldItem(): void {
+    if (this.cure.carried && !this.cure.previewOn) {
+      this.cure.present(this.animator);
+      this.heldItem = 'cure';
+      return;
+    }
+    if (this.heldItem === 'cure') {
+      this.cure.releaseHand();
+      this.heldItem = null;
+    }
     const st = this.inventory.selectedStack;
     if (st?.gun) {
       const id = `gun:${st.gun.id}:${st.gun.parts.map((p) => `${p.part}${p.x}${p.y}`).join('')}`;
@@ -689,6 +742,35 @@ export class Game {
       this.heldModels.set(id, model);
     }
     this.animator.setHeld(model, 'tool');
+  }
+
+  /** Hold E to unhook the cure or pick up a station. A short tap still uses whatever you're facing. */
+  private pollCarry(dt: number): void {
+    if (!this.buildMode.active) this.cure.clearPreview();
+    const down = this.input.isDown('interact');
+    const hovered = this.currentInteractable;
+    const cureUi = this.cure.poll(dt, down);
+    const cureHolds = !!cureUi && (cureUi.verb.startsWith('Hold') || cureUi.consumed);
+    const stationUi = this.stations.poll(dt, cureHolds || this.cure.carried ? false : down, hovered, this.buildMode.active);
+    const prompt = cureUi ?? stationUi;
+    this.useVerb = prompt?.verb ?? null;
+    this.useLabel = prompt?.label ?? '';
+
+    if (!down && this.eDown) {
+      const tap = this.eTime < 0.28 && !cureUi?.consumed && !stationUi?.consumed;
+      if (tap && !this.buildMode.active) {
+        if (this.stations.carrying) this.stations.drop();
+        else if (this.cure.carried && !hovered) this.cure.hangInFront();
+        else if (hovered && !this.cure.alerting) {
+          hovered.onInteract();
+          events.emit('player:interact', { id: hovered.id });
+        }
+      }
+      this.eTime = 0;
+    }
+    if (down) this.eTime += dt;
+    this.eDown = down;
+    this.syncHeldItem();
   }
 
   private fixedUpdate(dt: number): void {
@@ -715,34 +797,28 @@ export class Game {
       dt,
       gunOut && this.input.isDown('fire'),
       gunOut && this.input.wasPressed('reload'),
-      gunOut && this.input.isDown('aim'),
     );
     if (!gunOut) {
       this.player.load = 0;
       this.player.aiming = false;
-      this.gathering.update(dt, this.input.isDown('fire') && !this.buildMode.active);
+      this.gathering.update(dt, this.input.isDown('fire') && !this.buildMode.active && !(this.input.isDown('orbit') && this.rig.canOrbit));
     }
     if (this.buildMode.active) this.updateBuildMode();
     else this.updateHammer(dt);
 
     this.currentInteractable = p.state === 'climbing' ? null : this.interactions.findBest(p.position, p.facing);
-    if (this.currentInteractable && this.input.wasPressed('interact')) {
-      this.currentInteractable.onInteract();
-      events.emit('player:interact', { id: this.currentInteractable.id });
-    }
+    this.pollCarry(dt);
 
     const inside = this.area.homeZone.contains(p.position);
     if (inside !== this.insideZone) {
       this.insideZone = inside;
       events.emit('zone:changed', { inside });
-      events.emit('toast', inside
-        ? { text: 'Back inside the Home Zone.', tone: 'info' }
-        : { text: 'You left the Home Zone. Keep an eye on the horde meter.', tone: 'warn' });
     }
 
     this.dayNight.update(dt);
     const night = this.dayNight.night;
     this.horde.night = night;
+    this.flow.setGoal(this.cure.x, this.cure.z);
     this.flow.update(dt);
     this.horde.update(dt);
     this.defenses.update(dt);
@@ -810,9 +886,11 @@ export class Game {
   }
 
   private updateAim(): void {
-    if (!this.input.mouseInWindow || !this.input.enabled) {
-      this.player.setAim(null);
-      this.hasGroundHit = false;
+    if (!this.input.mouseInWindow || !this.input.enabled || (this.input.isDown('orbit') && this.rig.canOrbit)) {
+      if (!(this.input.isDown('orbit') && this.rig.canOrbit)) {
+        this.player.setAim(null);
+        this.hasGroundHit = false;
+      }
       return;
     }
     this.mouseNdc.set(this.input.mouseNdc.x, this.input.mouseNdc.y);
@@ -836,10 +914,12 @@ export class Game {
     if (this.input.wasPressedThisFrame('pause')) {
       if (this.metaOverlay.open) this.metaOverlay.hide();
       else if (this.mapScreen.open) this.setMapOpen(false);
+      else if (this.inventoryView.splitting) this.inventoryView.closeSplit();
       else if (this.inventoryView.open) this.setInventoryOpen(false);
       else if (this.buildMode.active) this.setBuildMode(false);
       else this.setPaused(this.state === 'playing');
     }
+    if (this.input.wasPressedThisFrame('flashlight') && this.state === 'playing') this.toggleFlashlight();
     if (this.input.wasPressedThisFrame('inventory') && this.state === 'playing' && !this.mapScreen.open) this.setInventoryOpen(!this.inventoryView.open);
     if (this.input.wasPressedThisFrame('map') && this.state === 'playing') this.setMapOpen(!this.mapScreen.open);
     if (this.input.wasPressedThisFrame('debug')) this.debug.toggle();
@@ -948,6 +1028,7 @@ export class Game {
       this.rig.updateCutscene(dt, this.focusTarget, targetYaw, targetPitch, targetDist);
 
       this.input.consumeWheel();
+      this.input.consumeMouseDelta();
 
       if (t >= tTotal) {
         this.finishIntro();
@@ -959,10 +1040,12 @@ export class Game {
       else p.object.rotation.z = Math.min(Math.PI / 2, p.object.rotation.z + dt * 4);
 
       this.focusTarget.copy(this.renderPos);
+      const orbit = this.input.consumeMouseDelta();
+      if (playing && this.input.isDown('orbit') && this.rig.canOrbit) this.rig.orbit(orbit.x, orbit.y);
       this.rig.update(
         dt,
         this.renderPos,
-        playing && p.hasAimPoint ? p.aimPoint : null,
+        playing && !(this.input.isDown('orbit') && this.rig.canOrbit) && p.hasAimPoint ? p.aimPoint : null,
         this.input.consumeWheel(),
       );
     }
@@ -982,16 +1065,11 @@ export class Game {
     for (const e of this.area.ovenLights) e.gain = this.ovenGlow;
     this.lights.update(dt, this.rig.currentFocus);
     this.debris.update(dt);
-    this.building.update(dt);
+    this.building.update(dt, this.rig.camera.position);
     this.buildMode.render(dt, playing ? this.hammerTarget : null);
     this.area.homeZone.update(dt, this.insideZone);
 
-    const i = this.area.interior;
-    const inHut = this.renderPos.x > i.minX - 0.2 && this.renderPos.x < i.maxX + 0.2 && this.renderPos.z > i.minZ - 0.2 && this.renderPos.z < i.maxZ + 0.2;
-    this.area.roof.forced = inHut ? 0 : null;
-    this.occlusionTargets[0].copy(this.renderPos).setY(this.renderPos.y + 0.9);
-    this.occlusionTargets[1].copy(this.renderPos).setY(this.renderPos.y + 1.8);
-    this.occlusion.update(dt, this.rig.camera, this.occlusionTargets);
+    this.occlusion.update(dt, this.rig.camera, this.gatherOcclusion());
 
     if (this.colliderDebug?.visible && this.colliderDebugVersion !== this.collision.version) this.rebuildColliderDebug();
 
@@ -1060,6 +1138,7 @@ export class Game {
       remaining: this.raid.state === 'siege' ? this.siege.count : this.horde.raidAlive,
     });
     this.hud.setDay(dn.clock, dn.day, dn.phase);
+    this.hud.setFlashlight(this.flashlightOn);
     const gun = this.inventory.equippedGun;
     const gs = gun ? evaluateBuild(gun.parts).stats : null;
     this.hud.setAmmo(
@@ -1072,7 +1151,9 @@ export class Game {
       this.shooting.reloading ? this.shooting.reloadT / Math.max(0.2, gs?.reloadTime ?? 1) : 0,
     );
     const it = playing ? this.currentInteractable : null;
-    this.hud.setPrompt(it ? it.verb : null, it?.label);
+    this.hud.setPrompt(playing && this.useVerb ? this.useVerb : it ? it.verb : null, playing && this.useVerb ? this.useLabel : (it?.label ?? ''));
+    this.hud.setCureBreach(playing && this.cure.alerting, this.cure.secondsLeft);
+    this.hud.setCarrying(playing && this.cure.carried);
 
     this.hud.setCrosshair(this.input.mouseScreen.x, this.input.mouseScreen.y, playing && this.input.mouseInWindow && !this.input.mouseOverUi);
 
@@ -1151,6 +1232,36 @@ export class Game {
       return;
     }
     events.emit('toast', { text: `The siren won't help now: ${(this.raid.callBlocked ?? 'not yet').toLowerCase()}.`, tone: 'warn' });
+  }
+
+  private toggleFlashlight(): void {
+    this.flashlightOn = !this.flashlightOn;
+    this.flashlight.intensity = this.flashlightOn ? 22 : 0;
+    sfx('ui.click', { pitch: this.flashlightOn ? 1.25 : 0.7 });
+  }
+
+  /** Player plus every living mutant, so walls/roofs fade when something is lurking inside. */
+  private gatherOcclusion(): THREE.Vector3[] {
+    let n = 0;
+    const take = () => {
+      let v = this.occlusionTargets[n];
+      if (!v) {
+        v = new THREE.Vector3();
+        this.occlusionTargets[n] = v;
+      }
+      n++;
+      return v;
+    };
+    take().copy(this.renderPos).setY(this.renderPos.y + 0.9);
+    take().copy(this.renderPos).setY(this.renderPos.y + 1.8);
+    const samples: { x: number; z: number }[] = [{ x: this.renderPos.x, z: this.renderPos.z }];
+    for (const e of this.horde.enemies) {
+      if (!e.alive) continue;
+      take().copy(e.position).setY(e.position.y + e.lift + e.def.height * 0.65);
+      samples.push({ x: e.position.x, z: e.position.z });
+    }
+    this.building.fadeRoofs(samples);
+    return this.occlusionTargets.slice(0, n);
   }
 
   /** Siren prompt shows what cranking it would bring; the lamp spins while a raid is coming or on. */

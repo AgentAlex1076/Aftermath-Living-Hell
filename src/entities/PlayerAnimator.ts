@@ -63,7 +63,7 @@ export class PlayerAnimator {
 
   /** Puts a model in the right hand (or empties it). */
   setHeld(model: THREE.Object3D | null, kind: 'tool' | 'gun' = 'tool'): void {
-    if (this.held) this.held.removeFromParent();
+    if (this.held && this.held.parent === this.n.handR) this.held.removeFromParent();
     this.held = model;
     this.heldKind = model ? kind : 'none';
     if (model) {

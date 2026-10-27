@@ -25,7 +25,7 @@ export const TIERS: Record<TierId, TierDef> = {
 
 export const TIER_ORDER: readonly TierId[] = ['wood', 'scrap', 'armored'];
 
-export type PieceKind = 'foundation' | 'wall' | 'door' | 'deployable';
+export type PieceKind = 'foundation' | 'wall' | 'door' | 'roof' | 'deployable';
 export type WallShape = 'full' | 'doorway' | 'window' | 'half';
 export type BuildTab = 'structure' | 'traps' | 'power';
 export type HopperKind = 'stash' | 'fuel' | 'ammo' | 'gun' | 'chemicals';
@@ -80,6 +80,10 @@ export const PIECES = {
   door: {
     id: 'door', name: 'Door', kind: 'door', tab: 'structure', costScale: 0.4, hpScale: 0.7,
     description: 'Hangs in a doorway. Press E to open or close it.',
+  },
+  roof: {
+    id: 'roof', name: 'Roof', kind: 'roof', tab: 'structure', costScale: 0.7, hpScale: 0.9,
+    description: 'A pitched cover over a foundation. Mutants walk under it. Acid and a hammer still reach it.',
   },
   storageBox: {
     id: 'storageBox', name: 'Storage Box', kind: 'deployable', tab: 'structure', costScale: 1, hpScale: 1,
@@ -161,7 +165,7 @@ export const PIECES = {
 export type PieceId = keyof typeof PIECES;
 
 export const BUILD_TABS: readonly { id: BuildTab; name: string; pieces: readonly PieceId[] }[] = [
-  { id: 'structure', name: 'Structure', pieces: ['foundation', 'wall', 'doorway', 'window', 'halfWall', 'door', 'storageBox'] },
+  { id: 'structure', name: 'Structure', pieces: ['foundation', 'wall', 'doorway', 'window', 'halfWall', 'door', 'roof', 'storageBox'] },
   { id: 'traps', name: 'Traps', pieces: ['sandbags', 'spikeStrip', 'barbedWire', 'landmine', 'tripwire', 'gasTrap', 'shotgunTrap'] },
   { id: 'power', name: 'Power', pieces: ['generator', 'autoTurret', 'floodlight', 'flameVent'] },
 ];

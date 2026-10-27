@@ -124,15 +124,22 @@ export const CONFIG = {
     fov: 38,
     yawDeg: 45,
     pitchDeg: 54,
+    minPitchDeg: 16,
+    maxPitchDeg: 80,
     distance: 20,
     minDistance: 12,
     maxDistance: 46,
     zoomStep: 0.0025,
-    followSharpness: 7,
-    zoomSharpness: 10,
+    followSharpness: 10,
+    zoomSharpness: 12,
+    /** How quickly free-cam orbit angles catch up to the drag target. */
+    orbitSharpness: 14,
     lookAhead: 0.2,
     maxLookAhead: 4.5,
     maxShake: 0.6,
+    /** Degrees of yaw/pitch per pixel while holding RMB. */
+    orbitYaw: 0.16,
+    orbitPitch: 0.12,
   },
 
   homeZone: {
@@ -214,9 +221,32 @@ export const CONFIG = {
     roamCount: 3,
     roamMin: 48,
     roamMax: 88,
-    /** How close the player has to be before an enemy leaves the flow field and chases. */
+    /** How close the player has to be before an enemy leaves the flow field and chases, outside the Home Zone. */
     playerAggro: 7.5,
     structureReach: 1.15,
+  },
+
+  /** The hanging cure. Mutants path to it; losing it ends the run. */
+  cure: {
+    hp: 250,
+    /** Proximity at which a mutant drops the cure and swings at you. */
+    aggro: 5.5,
+    /** Extra metres of stickiness so they don't flicker on the bubble's edge. */
+    aggroStick: 1.3,
+    /** Chase time after you damage one, unless you back off past `grudgeLeash`. */
+    grudgeTime: 8,
+    /** Once a provoked mutant has gotten this close, leaving `grudgeLeash` sends it back to the cure. */
+    grudgeClose: 8,
+    grudgeLeash: 11,
+    /** Melee reach added to the mutant's own attack range. */
+    hitPad: 0.4,
+    unhookTime: 0.5,
+    repairTime: 5,
+    /** How long the shattered flask gives you to reseal it. */
+    countdown: 30,
+    /** Hang points have to sit inside the flow field, which is centered on the hut. */
+    hangRadius: 46,
+    interactRadius: 2.15,
   },
 
   building: {
@@ -260,8 +290,6 @@ export const CONFIG = {
     pool: 48,
     radius: 0.07,
     hitWords: ['BLAM!', 'KRAK!', 'POW!', 'BANG!'] as const,
-    aimSpread: 0.42,
-    aimMove: 0.72,
     heatDecay: 0.35,
     jamClearTime: 0.55,
   },
@@ -289,6 +317,8 @@ export const CONFIG = {
     shotgunRange: 8,
     shotgunCone: 0.62,
     shotgunCooldown: 2.2,
+    shotgunStartAmmo: 20,
+    shotgunLowAmmo: 5,
     shotgun: {
       damage: 9,
       fireRate: 1,

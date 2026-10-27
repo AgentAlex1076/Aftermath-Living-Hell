@@ -213,6 +213,11 @@ body.playing {
   animation: danger-pulse 1.1s ease-in-out infinite;
 }
 
+.danger-pulse.cure {
+  box-shadow: inset 0 0 160px 42px rgba(58, 215, 255, 0.72);
+  animation: danger-pulse 0.62s ease-in-out infinite;
+}
+
 @keyframes danger-pulse {
   0%,
   100% {
@@ -497,6 +502,54 @@ body.playing {
 }
 
 /* Raid timer + Home Zone, top centre */
+
+.cure-alert {
+  position: absolute;
+  top: 78px;
+  left: 50%;
+  display: none;
+  align-items: center;
+  gap: 14px;
+  padding: 8px 16px 8px 14px;
+  color: #e9fbff;
+  background: #12343c;
+  border: 3px solid #071014;
+  box-shadow: 6px 5px 0 #e0302a;
+  font-family: var(--font-display);
+  letter-spacing: 0.06em;
+  transform: translateX(-50%) skewX(var(--skew));
+}
+
+.cure-alert.on {
+  display: flex;
+}
+
+.cure-alert-clock {
+  font-variant-numeric: tabular-nums;
+  font-size: 28px;
+  color: #7ef6ff;
+}
+
+.carry-chip {
+  position: absolute;
+  left: 28px;
+  top: 112px;
+  display: none;
+  padding: 6px 12px;
+  background: #12343c;
+  color: #bff6ff;
+  border: 3px solid #071014;
+  box-shadow: 4px 4px 0 #1a120c;
+  font-family: var(--font-ui);
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  font-size: 13px;
+  transform: skewX(var(--skew));
+}
+
+.carry-chip.on {
+  display: block;
+}
 
 .raid-timer {
   position: absolute;
@@ -1315,10 +1368,239 @@ body.playing {
   animation: full-flash 0.45s ease;
 }
 
+.slot-split {
+  position: absolute;
+  right: 2px;
+  top: 2px;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  font-size: 12px;
+  line-height: 1;
+  color: var(--ink);
+  background: var(--hazard);
+  border: 0;
+  cursor: pointer;
+  transform: skewX(var(--unskew));
+  z-index: 2;
+}
+
+.slot.can-split:hover .slot-split {
+  display: flex;
+}
+
+.hotbar .slot-split {
+  display: none !important;
+}
+
 @keyframes full-flash {
   30% {
     background-color: rgba(224, 48, 42, 0.75);
   }
+}
+
+.split-modal {
+  position: absolute;
+  inset: 0;
+  display: none;
+  place-items: center;
+  background: rgba(6, 8, 7, 0.55);
+  z-index: 8;
+}
+
+.split-modal.on {
+  display: grid;
+}
+
+.split-card {
+  width: 320px;
+  padding: 18px 20px 16px;
+  background: var(--ink-2);
+  border-top: 4px solid var(--hazard);
+  clip-path: var(--cut-panel);
+}
+
+.split-title {
+  font-family: var(--font-ui);
+  font-style: italic;
+  font-weight: 800;
+  font-size: 22px;
+  letter-spacing: 0.06em;
+  color: var(--hazard);
+}
+
+.split-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin: 14px 0 16px;
+  color: var(--paper);
+}
+
+.split-item b {
+  display: block;
+  font-family: var(--font-ui);
+  font-size: 18px;
+}
+
+.split-item span {
+  font-size: 12px;
+  letter-spacing: 0.08em;
+  color: var(--paper-dim);
+}
+
+.split-icon {
+  width: 52px;
+  height: 52px;
+  background: center / contain no-repeat;
+  filter: var(--icon-rim);
+}
+
+.split-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.split-step,
+.split-ok,
+.split-cancel,
+.split-presets button {
+  font-family: var(--font-ui);
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  color: var(--paper);
+  background: var(--ink-4);
+  border: 0;
+  cursor: pointer;
+}
+
+.split-step {
+  width: 42px;
+  height: 42px;
+  font-size: 24px;
+}
+
+.split-input {
+  flex: 1;
+  height: 42px;
+  text-align: center;
+  font-family: var(--font-ui);
+  font-weight: 800;
+  font-size: 22px;
+  color: var(--ink);
+  background: var(--paper);
+  border: 0;
+}
+
+.split-presets {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 6px;
+  margin: 12px 0 16px;
+}
+
+.split-presets button {
+  padding: 6px 0 5px;
+  font-size: 12px;
+}
+
+.split-actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+
+.split-cancel,
+.split-ok {
+  padding: 10px 0 8px;
+  font-size: 15px;
+}
+
+.split-ok {
+  color: var(--ink);
+  background: var(--hazard);
+}
+
+.inspect-card {
+  position: fixed;
+  width: 300px;
+  display: flex;
+  gap: 12px;
+  padding: 12px 14px 14px;
+  background: var(--paper);
+  color: var(--ink);
+  box-shadow: 6px 6px 0 var(--ink), var(--lift);
+  clip-path: polygon(0 0, 100% 0, 100% calc(100% - 12px), calc(100% - 12px) 100%, 0 100%);
+  opacity: 0;
+  pointer-events: none;
+  transform: translateY(6px);
+  transition: opacity 0.12s ease, transform 0.12s ease;
+  z-index: 12;
+}
+
+.inspect-card.on {
+  opacity: 1;
+  transform: none;
+}
+
+.insp-icon {
+  flex: 0 0 64px;
+  width: 64px;
+  height: 64px;
+  background: center / contain no-repeat;
+  filter: var(--icon-rim);
+}
+
+.insp-name {
+  font-family: var(--font-ui);
+  font-style: italic;
+  font-weight: 800;
+  font-size: 20px;
+  letter-spacing: 0.02em;
+  line-height: 1.1;
+  background: linear-gradient(transparent 55%, var(--c, var(--hazard)) 55%);
+  padding: 0 3px;
+}
+
+.insp-kind {
+  margin: 4px 0 6px;
+  font-family: var(--font-ui);
+  font-weight: 700;
+  font-size: 11px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: #5d5644;
+}
+
+.inspect-card p {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.35;
+}
+
+.insp-need {
+  display: inline-block;
+  margin-top: 8px;
+  margin-right: 6px;
+  padding: 2px 8px 1px;
+  font-family: var(--font-ui);
+  font-weight: 800;
+  font-size: 13px;
+  letter-spacing: 0.04em;
+  color: var(--paper);
+  background: var(--blood);
+}
+
+.insp-need.ok {
+  background: #2f5a0e;
+}
+
+.insp-need span {
+  opacity: 0.7;
 }
 
 /* ---------- Panels: backpack, crafting, oven, storage ---------- */
@@ -2004,7 +2286,82 @@ body.playing {
   }
 }
 
+/* ---------- Camera mode (bottom-right, above lamp/ammo) ---------- */
+
+.cam-controls {
+  position: absolute;
+  right: 36px;
+  bottom: 148px;
+  display: flex;
+  gap: 4px;
+  pointer-events: auto;
+}
+
+.cam-btn {
+  margin: 0;
+  padding: 4px 9px 3px;
+  border: 0;
+  font-family: var(--font-ui);
+  font-style: italic;
+  font-weight: 800;
+  font-size: 12px;
+  letter-spacing: 0.08em;
+  color: var(--paper-dim);
+  background: rgba(20, 22, 25, 0.82);
+  cursor: pointer;
+  transform: skewX(var(--skew));
+}
+
+.cam-btn:hover {
+  color: var(--paper);
+  background: rgba(40, 44, 50, 0.92);
+}
+
+.cam-btn.on {
+  color: var(--ink);
+  background: var(--hazard);
+}
+
+.cam-btn.cam-lock {
+  padding-inline: 7px;
+}
+
+body.building .cam-controls {
+  bottom: 188px;
+}
+
 /* ---------- Ammo, bottom right ---------- */
+
+.lamp-chip {
+  position: absolute;
+  right: 36px;
+  bottom: 108px;
+  display: none;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 14px 3px 10px;
+  font-family: var(--font-ui);
+  font-style: italic;
+  font-weight: 800;
+  font-size: 13px;
+  letter-spacing: 0.1em;
+  color: var(--ink);
+  background: var(--hazard);
+  box-shadow: var(--lift);
+  transform: skewX(var(--skew));
+}
+
+.lamp-chip.on {
+  display: flex;
+}
+
+.lamp-chip i {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--ink);
+  box-shadow: 0 0 8px #ffe2b4;
+}
 
 .ammo-chip {
   position: absolute;

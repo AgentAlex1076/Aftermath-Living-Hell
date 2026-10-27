@@ -18,12 +18,13 @@ function fillSlot(node: HTMLElement, stack: Stack | null, icons: Icons): void {
   const qty = q(node, '.slot-qty');
   icon.style.backgroundImage = stack ? `url(${stackIcon(stack, icons)})` : 'none';
   qty.textContent = stack && stack.qty > 1 ? String(stack.qty) : '';
+  node.classList.toggle('can-split', !!stack && stack.qty > 1 && !stack.gun);
 }
 
 function slotNode(index: number, label?: string): HTMLElement {
   const node = el('div', 'slot empty');
   node.dataset.index = String(index);
-  node.innerHTML = `<span class="slot-icon"></span><span class="slot-qty"></span>${label ? `<span class="slot-key">${label}</span>` : ''}`;
+  node.innerHTML = `<span class="slot-icon"></span><span class="slot-qty"></span>${label ? `<span class="slot-key">${label}</span>` : ''}<button type="button" class="slot-split" title="Split stack">➗</button>`;
   return node;
 }
 
@@ -115,6 +116,10 @@ export class InventoryView {
   private container: OpenContainer | null = null;
   private acceptInto: ((stack: Stack) => boolean) | null = null;
   private isOpen = false;
+  private splitFrom: SlotRef | null = null;
+  private readonly splitModal: HTMLElement;
+  private readonly splitInput: HTMLInputElement;
+  private splitMax = 1;
 
   constructor(
     parent: HTMLElement,
@@ -149,6 +154,30 @@ export class InventoryView {
     this.hint = q(this.root, '.inv-hint');
     this.ghost = el('div', 'drag-ghost');
     this.root.appendChild(this.ghost);
+    this.splitModal = el('div', 'split-modal');
+    this.splitModal.innerHTML = `
+      <div class="split-card">
+        <div class="split-title">SPLIT STACK</div>
+        <div class="split-item"></div>
+        <div class="split-row">
+          <button type="button" class="split-step" data-d="-1">−</button>
+          <input class="split-input" type="number" min="1" inputmode="numeric">
+          <button type="button" class="split-step" data-d="1">+</button>
+        </div>
+        <div class="split-presets">
+          <button type="button" data-p="1">1</button>
+          <button type="button" data-p="quarter">1/4</button>
+          <button type="button" data-p="half">HALF</button>
+          <button type="button" data-p="rest">ALL − 1</button>
+        </div>
+        <div class="split-actions">
+          <button type="button" class="split-cancel">CANCEL</button>
+          <button type="button" class="split-ok">SPLIT</button>
+        </div>
+      </div>`;
+    this.root.appendChild(this.splitModal);
+    this.splitInput = q<HTMLInputElement>(this.splitModal, '.split-input');
+    this.bindSplit();
     this.updateHint();
 
     this.root.addEventListener('pointerdown', this.onPointerDown);
@@ -173,6 +202,10 @@ export class InventoryView {
     return this.isOpen;
   }
 
+  get splitting(): boolean {
+    return this.splitFrom !== null;
+  }
+
   /** Container to the right of the backpack, where the crafting, oven or storage panel lives. */
   get side(): HTMLElement {
     return q(this.root, '.inv-side');
@@ -185,6 +218,7 @@ export class InventoryView {
     if (open) this.refresh();
     else {
       this.cancelDrag();
+      this.closeSplit();
       this.showTooltip(null);
     }
   }
@@ -218,7 +252,7 @@ export class InventoryView {
   private updateHint(): void {
     this.hint.textContent = this.container
       ? 'DRAG BETWEEN BAGS · SHIFT- OR RIGHT-CLICK TO SEND ACROSS'
-      : 'DRAG TO MOVE · DROP A PART ON A GUN TO MOD · SHIFT-CLICK HOTBAR · RIGHT-CLICK USE';
+      : 'DRAG TO MOVE · ➗ SPLIT · DROP A PART ON A GUN TO MOD · SHIFT-CLICK HOTBAR · RIGHT-CLICK USE';
   }
 
   private refresh(): void {
@@ -287,8 +321,93 @@ export class InventoryView {
     this.tooltip.classList.add('on');
   }
 
+  closeSplit(): void {
+    this.splitFrom = null;
+    this.splitModal.classList.remove('on');
+    this.splitInput.blur();
+  }
+
+  private bindSplit(): void {
+    this.splitModal.addEventListener('click', (e) => {
+      const t = e.target as HTMLElement;
+      if (t === this.splitModal || t.closest('.split-cancel')) this.closeSplit();
+    });
+    this.splitModal.querySelectorAll<HTMLButtonElement>('.split-step').forEach((b) =>
+      b.addEventListener('click', () => this.nudgeSplit(Number(b.dataset.d))),
+    );
+    this.splitModal.querySelectorAll<HTMLButtonElement>('[data-p]').forEach((b) =>
+      b.addEventListener('click', () => this.presetSplit(b.dataset.p!)),
+    );
+    q(this.splitModal, '.split-ok').addEventListener('click', () => this.confirmSplit());
+    this.splitInput.addEventListener('input', () => this.clampSplitInput());
+    this.splitInput.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        this.confirmSplit();
+      }
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        this.closeSplit();
+      }
+    });
+  }
+
+  private openSplit(ref: SlotRef): void {
+    const st = ref.inv.slots[ref.i];
+    if (!st || st.qty <= 1 || st.gun) return;
+    this.splitFrom = ref;
+    this.splitMax = st.qty - 1;
+    const def: ItemDef = ITEMS[st.item];
+    q(this.splitModal, '.split-item').innerHTML =
+      `<span class="split-icon" style="background-image:url(${stackIcon(st, this.icons)})"></span>` +
+      `<div><b>${def.name.toUpperCase()}</b><span>${st.qty} IN SLOT</span></div>`;
+    this.splitInput.max = String(this.splitMax);
+    this.splitInput.value = String(Math.max(1, Math.floor(st.qty / 2)));
+    this.splitModal.classList.add('on');
+    this.splitInput.focus();
+    this.splitInput.select();
+  }
+
+  private clampSplitInput(): void {
+    const n = Math.floor(Number(this.splitInput.value));
+    if (!Number.isFinite(n)) return;
+    this.splitInput.value = String(Math.max(1, Math.min(this.splitMax, n)));
+  }
+
+  private nudgeSplit(delta: number): void {
+    const n = Math.floor(Number(this.splitInput.value)) || 1;
+    this.splitInput.value = String(Math.max(1, Math.min(this.splitMax, n + delta)));
+  }
+
+  private presetSplit(kind: string): void {
+    const max = this.splitMax + 1;
+    const map: Record<string, number> = {
+      '1': 1,
+      quarter: Math.max(1, Math.floor(max / 4)),
+      half: Math.max(1, Math.floor(max / 2)),
+      rest: Math.max(1, max - 1),
+    };
+    this.splitInput.value = String(Math.max(1, Math.min(this.splitMax, map[kind] ?? 1)));
+  }
+
+  private confirmSplit(): void {
+    const ref = this.splitFrom;
+    if (!ref) return;
+    this.clampSplitInput();
+    const qty = Math.floor(Number(this.splitInput.value));
+    if (!ref.inv.splitOff(ref.i, qty)) this.flashFull(this.inv);
+    this.closeSplit();
+  }
+
   private onPointerDown = (e: PointerEvent): void => {
     if (!this.isOpen || e.button !== 0) return;
+    if ((e.target as Element).closest('.slot-split')) {
+      e.preventDefault();
+      e.stopPropagation();
+      const ref = this.slotAt(e.target);
+      if (ref) this.openSplit(ref);
+      return;
+    }
     const ref = this.slotAt(e.target);
     if (!ref || !ref.inv.slots[ref.i]) return;
     if (e.shiftKey) {

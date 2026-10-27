@@ -40,6 +40,8 @@ interface Runtime {
   head: THREE.Object3D | null;
   gunObject: THREE.Object3D | null;
   gunKey: string;
+  ammoBadge: THREE.Sprite | null;
+  ammoState: 'ok' | 'low' | 'empty';
 }
 
 /**
@@ -263,6 +265,8 @@ export class Defenses {
       powered: !p.def.needsPower, running: false, spent: false, lights, ring,
       head: p.object.getObjectByName('head') ?? null,
       gunObject: null, gunKey: '',
+      ammoBadge: p.def.id === 'shotgunTrap' ? makeAmmoBadge(this.scene, p) : null,
+      ammoState: 'ok',
     };
   }
 
@@ -270,6 +274,7 @@ export class Defenses {
     this.lights.removeAll(rt.lights);
     rt.ring?.removeFromParent();
     rt.gunObject?.removeFromParent();
+    rt.ammoBadge?.removeFromParent();
   }
 
   private countItem(p: Piece, item: ItemId): number {
@@ -346,6 +351,7 @@ export class Defenses {
   }
 
   private tickShotgun(p: Piece, rt: Runtime, dt: number): void {
+    this.syncAmmoBadge(p, rt);
     rt.cooldown = Math.max(0, rt.cooldown - dt);
     if (rt.cooldown > 0 || this.countItem(p, 'ammo') <= 0) return;
     const yaw = p.rot;
@@ -494,6 +500,19 @@ export class Defenses {
     return false;
   }
 
+  private syncAmmoBadge(p: Piece, rt: Runtime): void {
+    const badge = rt.ammoBadge;
+    if (!badge) return;
+    const ammo = this.countItem(p, 'ammo');
+    const state: Runtime['ammoState'] = ammo <= 0 ? 'empty' : ammo <= D.shotgunLowAmmo ? 'low' : 'ok';
+    if (state !== rt.ammoState) {
+      rt.ammoState = state;
+      badge.visible = state !== 'ok';
+      badge.material = ammoBadgeMat(state === 'empty' ? 'empty' : 'low');
+    }
+    badge.position.set(p.x, p.y + 1.55, p.z);
+  }
+
   private syncGunMesh(_p: Piece, rt: Runtime, gun: GunInstance | null): void {
     const key = gun ? `${gun.id}:${gun.parts.map((x) => x.part).join()}` : '';
     if (key === rt.gunKey) return;
@@ -510,6 +529,61 @@ export class Defenses {
     mount.add(mesh);
     rt.gunObject = mesh;
   }
+}
+
+const ammoMats: Partial<Record<'empty' | 'low', THREE.SpriteMaterial>> = {};
+
+function ammoBadgeMat(kind: 'empty' | 'low'): THREE.SpriteMaterial {
+  const existing = ammoMats[kind];
+  if (existing) return existing;
+  const canvas = document.createElement('canvas');
+  canvas.width = 128;
+  canvas.height = 128;
+  const ctx = canvas.getContext('2d')!;
+  const fill = kind === 'empty' ? '#e0302a' : '#e3b21b';
+  ctx.clearRect(0, 0, 128, 128);
+  ctx.translate(64, 64);
+  ctx.fillStyle = fill;
+  ctx.beginPath();
+  ctx.moveTo(-18, -36);
+  ctx.lineTo(18, -36);
+  ctx.lineTo(22, 28);
+  ctx.quadraticCurveTo(0, 42, -22, 28);
+  ctx.closePath();
+  ctx.fill();
+  ctx.strokeStyle = '#140f0c';
+  ctx.lineWidth = 6;
+  ctx.stroke();
+  ctx.fillStyle = '#140f0c';
+  ctx.beginPath();
+  ctx.arc(0, -12, 6, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.font = 'bold 18px sans-serif';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillStyle = '#f1e7cf';
+  ctx.strokeStyle = '#140f0c';
+  ctx.lineWidth = 4;
+  const label = kind === 'empty' ? 'NO AMMO' : 'LOW';
+  ctx.strokeText(label, 0, 48);
+  ctx.fillText(label, 0, 48);
+  const mat = new THREE.SpriteMaterial({
+    map: new THREE.CanvasTexture(canvas),
+    transparent: true,
+    depthWrite: false,
+  });
+  ammoMats[kind] = mat;
+  return mat;
+}
+
+function makeAmmoBadge(scene: THREE.Scene, p: Piece): THREE.Sprite {
+  const sprite = new THREE.Sprite(ammoBadgeMat('empty'));
+  sprite.scale.set(0.85, 0.85, 1);
+  sprite.position.set(p.x, p.y + 1.55, p.z);
+  sprite.visible = false;
+  sprite.renderOrder = 5;
+  scene.add(sprite);
+  return sprite;
 }
 
 /** Half-width of the side of the base a siege wave hits. */

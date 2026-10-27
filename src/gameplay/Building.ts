@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { CONFIG } from '../data/config';
 import { events } from '../core/EventBus';
-import { damp } from '../core/math';
+import { clamp, damp } from '../core/math';
 import { sfx } from '../audio/AudioEngine';
 import { ITEMS, type ItemDef } from '../data/items';
 import type { ItemAmount } from '../data/loot';
@@ -67,6 +67,18 @@ export interface Piece {
   interactable: Interactable | null;
   readonly storage: Inventory | null;
   readonly door: DoorState | null;
+  gauge: WallGauge | null;
+  /** Placed for free with the starter hut. Scrapping it returns nothing. */
+  gift: boolean;
+}
+
+interface WallGauge {
+  root: THREE.Group;
+  /** Local +Z and −Z faces; only the one toward the camera is shown. */
+  faces: THREE.Group[];
+  fills: THREE.Mesh[];
+  mat: THREE.MeshBasicMaterial;
+  shown: number;
 }
 
 export interface Placement {
@@ -114,7 +126,7 @@ function cellEdges(i: number, j: number): Edge[] {
   ];
 }
 
-function edgeTransform(e: Edge): { x: number; z: number; rot: number } {
+export function edgeTransform(e: Edge): { x: number; z: number; rot: number } {
   return e.axis === 'x' ? { x: e.i * L + L / 2, z: e.j * L, rot: 0 } : { x: e.i * L, z: e.j * L + L / 2, rot: Math.PI / 2 };
 }
 
@@ -140,6 +152,8 @@ function sizeOf(def: PieceDef): { w: number; h: number; d: number } {
       return { w: L + 0.28, h: wallHeight(def.shape ?? 'full') + 0.08, d: B.wallThickness + 0.08 };
     case 'door':
       return { w: DOOR_SIZE.width, h: DOOR_SIZE.height, d: 0.16 };
+    case 'roof':
+      return { w: L, h: 0.7, d: L };
     default: {
       const f = def.footprint ?? { w: 1, d: 1, h: 1 };
       return { w: f.w, h: f.h, d: f.d };
@@ -159,6 +173,7 @@ export class Building {
   built = 0;
   readonly pieces = new Set<Piece>();
   private readonly foundations = new Map<string, Piece>();
+  private readonly roofs = new Map<string, Piece>();
   private readonly walls = new Map<string, Piece>();
   private readonly doors = new Map<string, Piece>();
   private nextUid = 1;
@@ -170,6 +185,7 @@ export class Building {
   plan(def: PieceDef, cursor: THREE.Vector3, rotSteps: number): Placement {
     const p: Placement = { def, x: cursor.x, z: cursor.z, rot: 0, cell: null, edge: null, cost: pieceCost(def, 'wood'), ok: false, reason: '' };
     if (def.kind === 'foundation') this.planFoundation(p);
+    else if (def.kind === 'roof') this.planRoof(p);
     else if (def.kind === 'wall') this.planWall(p);
     else if (def.kind === 'door') this.planDoor(p, rotSteps);
     else this.planDeployable(p, rotSteps);
@@ -220,6 +236,16 @@ export class Building {
 
   supported(e: Edge): boolean {
     return edgeCells(e).some(([i, j]) => this.foundations.has(cellKey(i, j)));
+  }
+
+  private planRoof(p: Placement): void {
+    const i = Math.floor(p.x / L);
+    const j = Math.floor(p.z / L);
+    p.cell = [i, j];
+    p.x = i * L + L / 2;
+    p.z = j * L + L / 2;
+    if (!this.foundations.has(cellKey(i, j))) p.reason = 'NEEDS A FOUNDATION';
+    else if (this.roofs.has(cellKey(i, j))) p.reason = 'ROOF ALREADY HERE';
   }
 
   private planWall(p: Placement): void {
@@ -306,23 +332,110 @@ export class Building {
     return piece;
   }
 
+  /**
+   * Places a piece without charging, counting it, or announcing it.
+   * The starter hut is built this way: real wood pieces, already paid for by the ruin.
+   */
+  grant(def: PieceDef, tier: TierId, x: number, z: number, rot: number, cell: [number, number] | null, edge: Edge | null): Piece {
+    return this.spawn(def, tier, x, z, rot, cell, edge, true);
+  }
+
+  /** Opens a door without the player-in-the-way check. The starter door begins ajar. */
+  forceOpen(piece: Piece): void {
+    const d = piece.door;
+    if (!d || d.open) return;
+    d.open = true;
+    d.swing = 1;
+    if (d.collider) {
+      this.ctx.collision.remove(d.collider);
+      d.collider = null;
+    }
+    this.applySwing(piece);
+    if (piece.interactable) piece.interactable.verb = 'Close';
+  }
+
+  /** Roof panel directly over a ground point, if one is still standing. */
+  roofOver(x: number, z: number): Piece | null {
+    for (const p of this.roofs.values()) {
+      if (this.pieces.has(p) && this.distanceTo(p, x, z) < 0.05) return p;
+    }
+    return null;
+  }
+
+  /** Nearest wall or door within `reach` of a ground point. */
+  nearestEdge(x: number, z: number, reach: number): Piece | null {
+    let best: Piece | null = null;
+    let bestD = reach;
+    for (const p of this.pieces) {
+      if (p.def.kind !== 'wall' && p.def.kind !== 'door') continue;
+      const d = this.distanceTo(p, x, z);
+      if (d < bestD) {
+        bestD = d;
+        best = p;
+      }
+    }
+    return best;
+  }
+
+  /**
+   * When anyone is under a roof, hide the whole connected roof (every adjacent cell),
+   * so standing inside a hut reveals the full interior — not one panel at a time.
+   */
+  fadeRoofs(samples: readonly { x: number; z: number }[]): void {
+    const hide = new Set<Piece>();
+    for (const p of this.roofs.values()) {
+      if (!p.cell || hide.has(p)) continue;
+      let under = false;
+      for (const s of samples) {
+        if (this.distanceTo(p, s.x, s.z) < 0.05) {
+          under = true;
+          break;
+        }
+      }
+      if (!under) continue;
+      const stack: { i: number; j: number }[] = [{ i: p.cell[0], j: p.cell[1] }];
+      const seen = new Set<string>([cellKey(p.cell[0], p.cell[1])]);
+      while (stack.length) {
+        const { i, j } = stack.pop()!;
+        const roof = this.roofs.get(cellKey(i, j));
+        if (roof) hide.add(roof);
+        for (const [di, dj] of [[1, 0], [-1, 0], [0, 1], [0, -1]] as const) {
+          const ni = i + di;
+          const nj = j + dj;
+          const key = cellKey(ni, nj);
+          if (seen.has(key) || !this.roofs.has(key)) continue;
+          seen.add(key);
+          stack.push({ i: ni, j: nj });
+        }
+      }
+    }
+    for (const p of this.roofs.values()) {
+      if (!p.occluder) continue;
+      p.occluder.forced = hide.has(p) ? 0 : null;
+    }
+  }
+
   // --- Pieces -----------------------------------------------------------------------------------
 
-  private spawn(def: PieceDef, tier: TierId, x: number, z: number, rot: number, cell: [number, number] | null, edge: Edge | null): Piece {
+  private spawn(def: PieceDef, tier: TierId, x: number, z: number, rot: number, cell: [number, number] | null, edge: Edge | null, gift = false): Piece {
     const maxHp = pieceMaxHp(def, tier);
     const piece: Piece = {
       uid: this.nextUid++, def, tier, hp: maxHp, maxHp, x, z, y: this.slabY(def, x, z, cell, edge), rot, cell, edge, size: sizeOf(def),
       object: new THREE.Object3D(), colliders: [], occluder: null, interactable: null,
       storage: def.storageSlots ? new Inventory(def.storageSlots, 0) : null,
       door: def.kind === 'door' ? { open: false, swing: 0, hinge: null, collider: null } : null,
+      gauge: null,
+      gift,
     };
     this.attachModel(piece);
+    if (def.id === 'shotgunTrap' && piece.storage) piece.storage.add('ammo', CONFIG.defenses.shotgunStartAmmo);
     this.pieces.add(piece);
 
-    if (cell) {
+    if (cell && def.kind === 'foundation') {
       this.foundations.set(cellKey(...cell), piece);
       this.ctx.world.setFloor(`build:${piece.uid}`, { minX: x - L / 2, maxX: x + L / 2, minZ: z - L / 2, maxZ: z + L / 2 });
     }
+    if (cell && def.kind === 'roof') this.roofs.set(cellKey(...cell), piece);
     if (edge && def.kind === 'wall') this.walls.set(edgeKey(edge), piece);
     if (edge && def.kind === 'door') this.doors.set(edgeKey(edge), piece);
 
@@ -364,11 +477,16 @@ export class Building {
       piece.colliders = this.ctx.collision.addFromObject(obj, tag);
     }
     if (def.kind === 'wall' || def.kind === 'door') piece.occluder = this.ctx.occlusion.register(obj, 0.2);
+    else if (def.kind === 'roof') piece.occluder = this.ctx.occlusion.register(obj, 0);
   }
 
   /** Foundations sit on the highest corner they cover; walls sit on that slab; deployables sit on the ground. */
   private slabY(def: PieceDef, x: number, z: number, cell: readonly [number, number] | null, edge: Edge | null): number {
     const h = this.ctx.world.height;
+    if (def.kind === 'roof' && cell) {
+      const f = this.foundations.get(cellKey(cell[0], cell[1]));
+      return (f ? f.y : h.at(x, z)) + B.wallHeight;
+    }
     if (def.kind === 'foundation' && cell) {
       const x0 = cell[0] * L;
       const z0 = cell[1] * L;
@@ -415,6 +533,7 @@ export class Building {
     }
     if (piece.occluder) this.ctx.occlusion.unregister(piece.occluder);
     piece.occluder = null;
+    this.clearGauge(piece);
     piece.object.removeFromParent();
     disposeMerged(piece.object);
   }
@@ -456,8 +575,8 @@ export class Building {
     if (d.hinge) d.hinge.rotation.y = -d.swing * 1.7;
   }
 
-  /** Per-frame: swings doors. */
-  update(dt: number): void {
+  /** Per-frame: swings doors and ticks wall health gauges. */
+  update(dt: number, camera?: THREE.Vector3): void {
     for (const p of this.doors.values()) {
       const d = p.door!;
       const target = d.open ? 1 : 0;
@@ -466,6 +585,7 @@ export class Building {
       if (Math.abs(d.swing - target) < 0.002) d.swing = target;
       this.applySwing(p);
     }
+    for (const p of this.pieces) this.tickGauge(p, dt, camera);
   }
 
   // --- Damage, support and collapse -------------------------------------------------------------
@@ -483,6 +603,7 @@ export class Building {
     this.ctx.debris.burst(piece.x, piece.y + (at.y - piece.y) * 0.6, piece.z, tier.color, 6);
     this.ctx.floaters.spawn(at, tier.hitWords[Math.floor(Math.random() * tier.hitWords.length)], 'word', undefined, 0, 0, amount);
     sfx('build.hit', { x: piece.x, z: piece.z, param: piece.tier === 'wood' ? 0 : 1, pitch: 0.9 + Math.random() * 0.2 });
+    this.showGauge(piece);
     if (piece.hp <= 0) this.destroy(piece, 'destroyed');
   }
 
@@ -490,10 +611,12 @@ export class Building {
     if (!this.pieces.delete(piece)) return;
     this.detachModel(piece);
     if (piece.interactable) this.ctx.interactions.remove(piece.interactable);
-    if (piece.cell) {
+    this.clearGauge(piece);
+    if (piece.cell && piece.def.kind === 'foundation') {
       this.foundations.delete(cellKey(...piece.cell));
       this.ctx.world.setFloor(`build:${piece.uid}`, null);
     }
+    if (piece.cell && piece.def.kind === 'roof') this.roofs.delete(cellKey(...piece.cell));
     if (piece.edge && piece.def.kind === 'wall') this.walls.delete(edgeKey(piece.edge));
     if (piece.edge && piece.def.kind === 'door') this.doors.delete(edgeKey(piece.edge));
     if (piece.storage) {
@@ -514,16 +637,90 @@ export class Building {
       events.emit('camera:shake', { amount: cause === 'collapsed' ? 0.2 : 0.3 });
     }
 
-    if (piece.cell) {
+    if (piece.cell && piece.def.kind === 'foundation') {
       for (const e of cellEdges(...piece.cell)) {
         const w = this.walls.get(edgeKey(e));
         if (w && !this.supported(e)) this.destroy(w, 'collapsed', remote);
       }
+      const roof = this.roofs.get(cellKey(...piece.cell));
+      if (roof) this.destroy(roof, 'collapsed', remote);
     }
     if (piece.edge && piece.def.kind === 'wall') {
       const door = this.doors.get(edgeKey(piece.edge));
       if (door) this.destroy(door, 'collapsed', remote);
     }
+  }
+
+  // --- Wall health gauge ------------------------------------------------------------------------
+
+  private showGauge(piece: Piece): void {
+    if (piece.def.kind !== 'wall' && piece.def.kind !== 'door' && piece.def.kind !== 'roof') return;
+    if (!piece.gauge) piece.gauge = this.makeGauge(piece);
+    piece.object.add(piece.gauge.root);
+  }
+
+  private makeGauge(piece: Piece): WallGauge {
+    const h = Math.min(1.35, Math.max(0.7, piece.size.h * 0.55));
+    const root = new THREE.Group();
+    root.name = 'hpGauge';
+    root.position.y = piece.size.h * 0.55;
+    const trackGeo = new THREE.BoxGeometry(0.08, h, 0.04);
+    const fillGeo = new THREE.BoxGeometry(0.06, h, 0.05);
+    fillGeo.translate(0, h / 2, 0);
+    const trackMat = new THREE.MeshBasicMaterial({ color: '#1a1814', depthTest: true });
+    const mat = new THREE.MeshBasicMaterial({ color: '#3fd15a', depthTest: true });
+    const fills: THREE.Mesh[] = [];
+    const faces: THREE.Group[] = [];
+    for (const z of [piece.size.d / 2 + 0.06, -(piece.size.d / 2 + 0.06)]) {
+      const face = new THREE.Group();
+      face.position.z = z;
+      const track = new THREE.Mesh(trackGeo, trackMat);
+      const fill = new THREE.Mesh(fillGeo, mat);
+      fill.position.y = -h / 2;
+      face.add(track, fill);
+      root.add(face);
+      faces.push(face);
+      fills.push(fill);
+    }
+    return { root, faces, fills, mat, shown: 1 };
+  }
+
+  private tickGauge(piece: Piece, dt: number, camera?: THREE.Vector3): void {
+    const g = piece.gauge;
+    if (!g) return;
+    const frac = clamp(piece.hp / piece.maxHp, 0, 1);
+    const full = frac >= 0.995;
+    g.shown = damp(g.shown, full ? 0 : 1, full ? 4 : 14, dt);
+    g.root.visible = g.shown > 0.02;
+    g.root.scale.setScalar(0.85 + g.shown * 0.15);
+    for (const fill of g.fills) fill.scale.y = Math.max(0.02, frac);
+
+    // Only the face toward the camera — never both sides phasing through the wall.
+    if (camera && g.faces.length === 2) {
+      const dx = camera.x - piece.x;
+      const dz = camera.z - piece.z;
+      const c = Math.cos(piece.rot);
+      const s = Math.sin(piece.rot);
+      const localZ = dx * s + dz * c;
+      g.faces[0].visible = localZ >= 0;
+      g.faces[1].visible = localZ < 0;
+    }
+
+    const c = g.mat.color;
+    if (frac > 0.55) c.set('#3fd15a').lerp(new THREE.Color('#e3b21b'), (1 - frac) / 0.45);
+    else if (frac > 0.22) c.set('#e3b21b').lerp(new THREE.Color('#e0302a'), (0.55 - frac) / 0.33);
+    else {
+      const flash = 0.55 + 0.45 * Math.sin(performance.now() * 0.018);
+      c.setRGB(0.88 * flash, 0.12, 0.1);
+    }
+    if (full && g.shown < 0.03) this.clearGauge(piece);
+  }
+
+  private clearGauge(piece: Piece): void {
+    if (!piece.gauge) return;
+    piece.gauge.root.removeFromParent();
+    piece.gauge.mat.dispose();
+    piece.gauge = null;
   }
 
   // --- Hammer -----------------------------------------------------------------------------------
@@ -546,6 +743,8 @@ export class Building {
     for (const p of this.pieces) {
       if (p.def.kind === 'foundation' || p.def.walkThrough) continue;
       const d = this.distanceTo(p, x, z);
+      // Standing under a roof is not "next to" it. The edge is still a target from outside.
+      if (p.def.kind === 'roof' && d < 0.2) continue;
       if (d < bestD) {
         bestD = d;
         best = p;
@@ -586,6 +785,7 @@ export class Building {
   }
 
   refund(piece: Piece): ItemAmount[] {
+    if (piece.gift) return [];
     return pieceCost(piece.def, piece.tier)
       .map((a) => ({ item: a.item, qty: Math.floor(a.qty * B.refundFactor) }))
       .filter((a) => a.qty > 0);
@@ -610,6 +810,7 @@ export class Building {
     sfx('build.repair', { x: piece.x, z: piece.z });
     this.ctx.floaters.spawn(at.clone().setY(at.y - 0.5), `+${Math.round(restore)} HP`, 'gain', '#8cff3a', 0.05);
     events.emit('camera:shake', { amount: 0.05 });
+    this.showGauge(piece);
   }
 
   upgrade(piece: Piece): void {
@@ -653,13 +854,11 @@ export class Building {
   /** Tears a piece down for a partial refund. Returns false if it refused. */
   demolish(piece: Piece): boolean {
     if (piece.storage && !piece.storage.empty) {
-      if (piece.def.hopper && piece.def.hopper !== 'stash') {
-        if (!this.dumpStorage(piece)) {
-          events.emit('toast', { text: 'Make room before you tear it down.', tone: 'warn' });
-          return false;
-        }
-      } else {
-        events.emit('toast', { text: 'Empty the box before you tear it down.', tone: 'warn' });
+      if (!this.dumpStorage(piece)) {
+        events.emit('toast', {
+          text: piece.def.hopper === 'stash' ? 'Empty the box (or make backpack room) before you tear it down.' : 'Make room before you tear it down.',
+          tone: 'warn',
+        });
         return false;
       }
     }

@@ -35,7 +35,7 @@ type Entry = { w: number; node?: NodeId; container?: ContainerId; prop?: string 
 const FOOTPRINT: Record<string, number> = {
   deadTree: 0.7, rock: 1.3, rubble: 1.2, carcass: 1.1, scrapPile: 1.3, car: 2.7, barrel: 0.5, toxicBarrel: 0.9,
   crate: 0.7, toolbox: 0.5, cabinet: 0.6, labLocker: 0.6,
-  'prop.fence': 1.8, 'prop.lampPost': 0.5, 'prop.barrier': 1.2,
+  fence: 1.8, barrier: 1.2, 'prop.lampPost': 0.5,
 };
 
 const TABLES: Record<BiomeId, { density: number; entries: Entry[] }> = {
@@ -43,7 +43,7 @@ const TABLES: Record<BiomeId, { density: number; entries: Entry[] }> = {
     density: 20,
     entries: [
       { w: 12, node: 'deadTree' }, { w: 3, node: 'rock' }, { w: 1, node: 'rubble' }, { w: 0.6, node: 'barrel' },
-      { w: 0.3, node: 'scrapPile' }, { w: 0.5, container: 'crate' }, { w: 0.6, prop: 'prop.fence' },
+      { w: 0.3, node: 'scrapPile' }, { w: 0.5, container: 'crate' }, { w: 0.6, node: 'fence' },
       { w: 0.9, node: 'carcass' },
     ],
   },
@@ -52,7 +52,7 @@ const TABLES: Record<BiomeId, { density: number; entries: Entry[] }> = {
     entries: [
       { w: 3.5, node: 'deadTree' }, { w: 3, node: 'rubble' }, { w: 1.4, node: 'car' }, { w: 1.5, node: 'barrel' },
       { w: 1, node: 'scrapPile' }, { w: 0.6, node: 'rock' }, { w: 1.5, container: 'crate' }, { w: 0.3, container: 'toolbox' },
-      { w: 2.5, prop: 'prop.fence' }, { w: 0.4, prop: 'prop.lampPost' }, { w: 0.5, prop: 'prop.barrier' },
+      { w: 2.5, node: 'fence' }, { w: 0.4, prop: 'prop.lampPost' }, { w: 0.5, node: 'barrier' },
       { w: 0.5, node: 'carcass' },
     ],
   },
@@ -61,7 +61,7 @@ const TABLES: Record<BiomeId, { density: number; entries: Entry[] }> = {
     entries: [
       { w: 3, node: 'scrapPile' }, { w: 3, node: 'rubble' }, { w: 3, node: 'barrel' }, { w: 1, node: 'toxicBarrel' },
       { w: 1, node: 'car' }, { w: 1, node: 'rock' }, { w: 1, node: 'deadTree' }, { w: 1, container: 'crate' },
-      { w: 0.6, container: 'toolbox' }, { w: 1.2, prop: 'prop.barrier' }, { w: 0.5, prop: 'prop.lampPost' },
+      { w: 0.6, container: 'toolbox' }, { w: 1.2, node: 'barrier' }, { w: 0.5, prop: 'prop.lampPost' },
     ],
   },
   toxic: {
@@ -227,7 +227,7 @@ export function generateChunk(seed: number, biomes: Biomes, height: HeightField,
       const x = p.x - p.tz * off;
       const z = p.z + p.tx * off;
       if (free(x, z, 1.2, true)) {
-        spawns.push({ kind: 'prop', model: 'prop.barrier', x, z, rot: Math.atan2(p.tx, p.tz) + Math.PI / 2 + rng.range(-0.3, 0.3), seed: rng.int(0, 1e9) });
+        spawns.push({ kind: 'node', uid: uid(), node: 'barrier', x, z, rot: Math.atan2(p.tx, p.tz) + Math.PI / 2 + rng.range(-0.3, 0.3), seed: rng.int(0, 1e9) });
         taken.push({ x, z, r: 1.2 });
       }
     }

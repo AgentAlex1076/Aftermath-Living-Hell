@@ -1,6 +1,8 @@
 import * as THREE from 'three';
 import { CONFIG } from '../data/config';
-import { DEG2RAD, clamp, dampFactor } from '../core/math';
+import { DEG2RAD, clamp, damp, dampFactor } from '../core/math';
+
+export type CameraMode = 'fixed' | 'free';
 
 /**
  * Camera rig providing the signature 3/4 top-down isometric view with smooth
@@ -17,19 +19,30 @@ export class CameraRig {
 
   private distance: number = CONFIG.camera.distance;
   private targetDistance: number = CONFIG.camera.distance;
+  private yawDeg: number = CONFIG.camera.yawDeg;
+  private pitchDeg: number = CONFIG.camera.pitchDeg;
+  private targetYawDeg: number = CONFIG.camera.yawDeg;
+  private targetPitchDeg: number = CONFIG.camera.pitchDeg;
   private trauma = 0;
   private time = 0;
+
+  /** `fixed` = default isometric; `free` = player can orbit (unless locked). */
+  mode: CameraMode = 'fixed';
+  /** Free-cam only: keep the current orbit angles and ignore further RMB drag. */
+  locked = false;
 
   constructor(aspect: number) {
     const c = CONFIG.camera;
     this.camera = new THREE.PerspectiveCamera(c.fov, aspect, 0.5, 520);
-    const yaw = c.yawDeg * DEG2RAD;
-    const pitch = c.pitchDeg * DEG2RAD;
-    this.offsetDir.set(Math.sin(yaw) * Math.cos(pitch), Math.sin(pitch), Math.cos(yaw) * Math.cos(pitch));
+    this.applyAngles();
   }
 
   get currentFocus(): THREE.Vector3 {
     return this.focus;
+  }
+
+  get canOrbit(): boolean {
+    return this.mode === 'free' && !this.locked;
   }
 
   snapTo(target: THREE.Vector3): void {
@@ -41,6 +54,37 @@ export class CameraRig {
     this.trauma = clamp(this.trauma + amount, 0, 1);
   }
 
+  /** Snap angles back to the default isometric view. */
+  resetFixed(): void {
+    const c = CONFIG.camera;
+    this.mode = 'fixed';
+    this.locked = false;
+    this.targetYawDeg = c.yawDeg;
+    this.targetPitchDeg = c.pitchDeg;
+    this.yawDeg = c.yawDeg;
+    this.pitchDeg = c.pitchDeg;
+    this.applyAngles();
+  }
+
+  setFree(locked = false): void {
+    this.mode = 'free';
+    this.locked = locked;
+    this.targetYawDeg = this.yawDeg;
+    this.targetPitchDeg = this.pitchDeg;
+  }
+
+  toggleLock(): void {
+    if (this.mode !== 'free') {
+      this.setFree(true);
+      return;
+    }
+    this.locked = !this.locked;
+    if (this.locked) {
+      this.targetYawDeg = this.yawDeg;
+      this.targetPitchDeg = this.pitchDeg;
+    }
+  }
+
   /** Directly positions the camera for cinematic cutscenes while preserving trauma shake. */
   updateCutscene(dt: number, target: THREE.Vector3, yawDeg: number, pitchDeg: number, distance: number): void {
     const c = CONFIG.camera;
@@ -48,6 +92,10 @@ export class CameraRig {
     this.focus.copy(target);
     this.distance = distance;
     this.targetDistance = distance;
+    this.yawDeg = yawDeg;
+    this.pitchDeg = pitchDeg;
+    this.targetYawDeg = yawDeg;
+    this.targetPitchDeg = pitchDeg;
 
     const yaw = yawDeg * DEG2RAD;
     const pitch = pitchDeg * DEG2RAD;
@@ -83,9 +131,13 @@ export class CameraRig {
       Math.cos(t * 1.3 + 0.6) * Math.sin(t * 0.53) * shake,
     );
 
-    const yaw = c.yawDeg * DEG2RAD;
-    const pitch = c.pitchDeg * DEG2RAD;
-    this.offsetDir.set(Math.sin(yaw) * Math.cos(pitch), Math.sin(pitch), Math.cos(yaw) * Math.cos(pitch));
+    if (this.mode === 'fixed') {
+      this.targetYawDeg = c.yawDeg;
+      this.targetPitchDeg = c.pitchDeg;
+    }
+    this.yawDeg = damp(this.yawDeg, this.targetYawDeg, c.orbitSharpness, dt);
+    this.pitchDeg = damp(this.pitchDeg, this.targetPitchDeg, c.orbitSharpness, dt);
+    this.applyAngles();
 
     if (wheelDelta !== 0) {
       this.targetDistance = clamp(this.targetDistance * (1 + wheelDelta * c.zoomStep), c.minDistance, c.maxDistance);
@@ -114,9 +166,24 @@ export class CameraRig {
     return out.set(-out.z, 0, out.x);
   }
 
+  /** Orbit around the focus from an RMB drag. `dx`/`dy` are pixels. */
+  orbit(dx: number, dy: number): void {
+    if (!this.canOrbit) return;
+    const c = CONFIG.camera;
+    // Drag right / up moves the view the same way (not inverted).
+    this.targetYawDeg -= dx * c.orbitYaw;
+    this.targetPitchDeg = clamp(this.targetPitchDeg + dy * c.orbitPitch, c.minPitchDeg, c.maxPitchDeg);
+  }
+
   resize(aspect: number): void {
     this.camera.aspect = aspect;
     this.camera.updateProjectionMatrix();
+  }
+
+  private applyAngles(): void {
+    const yaw = this.yawDeg * DEG2RAD;
+    const pitch = this.pitchDeg * DEG2RAD;
+    this.offsetDir.set(Math.sin(yaw) * Math.cos(pitch), Math.sin(pitch), Math.cos(yaw) * Math.cos(pitch));
   }
 
   private applyTransform(): void {

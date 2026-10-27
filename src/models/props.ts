@@ -231,25 +231,31 @@ export function buildLampPost(): THREE.Object3D {
   return g;
 }
 
-/** Hand-cranked air-raid siren on a pole. The red lamp is driven by the raid state (`gain`). */
+/** Wall-mounted hand-crank siren. Local z = 0 is the wall face; +z sticks out into the yard. */
 export function buildSiren(): THREE.Object3D {
   const g = group('siren');
   g.add(
-    cyl(0.3, 0.34, 0.22, mat('concrete'), { pos: [0, 0.11, 0], segments: 10 }),
-    cyl(0.06, 0.08, 2.7, mat('metalDark'), { pos: [0, 1.45, 0], segments: 8 }),
-    box(0.17, 0.32, 0.17, mat('hazardYellow'), { pos: [0, 0.5, 0] }),
-    cyl(0.2, 0.2, 0.42, mat('redPaint'), { pos: [0, 2.75, -0.05], rot: [Math.PI / 2, 0, 0], segments: 12 }),
-    cyl(0.3, 0.16, 0.28, mat('redPaint'), { pos: [0, 2.75, 0.3], rot: [Math.PI / 2, 0, 0], segments: 12 }),
-    cyl(0.25, 0.25, 0.04, mat('iron'), { pos: [0, 2.75, 0.45], rot: [Math.PI / 2, 0, 0], segments: 12 }),
-    box(0.22, 0.3, 0.16, mat('metalDark'), { pos: [0, 1.15, 0.1] }),
-    box(0.04, 0.04, 0.3, mat('iron'), { pos: [0.13, 1.2, 0.2] }),
-    box(0.06, 0.16, 0.06, mat('wood'), { pos: [0.13, 1.08, 0.34] }),
+    // Flat back plate bolted flush to the wall.
+    box(0.36, 0.78, 0.04, mat('metalDark'), { pos: [0, 1.85, 0.02] }),
+    box(0.28, 0.62, 0.16, mat('hazardYellow'), { pos: [0, 1.85, 0.12] }),
+    box(0.3, 0.05, 0.18, mat('metalDark'), { pos: [0, 1.52, 0.12] }),
+    box(0.3, 0.05, 0.18, mat('metalDark'), { pos: [0, 2.18, 0.12] }),
+    // Crank housing and handle.
+    box(0.2, 0.24, 0.14, mat('metalDark'), { pos: [0, 1.62, 0.26] }),
+    box(0.04, 0.04, 0.22, mat('iron'), { pos: [0.12, 1.62, 0.36] }),
+    box(0.06, 0.16, 0.06, mat('wood'), { pos: [0.12, 1.54, 0.48] }),
+    cyl(0.03, 0.03, 0.12, mat('iron'), { pos: [0, 1.72, 0.32], rot: [Math.PI / 2, 0, 0], segments: 8 }),
+    // Horn sticking out from the wall.
+    cyl(0.14, 0.14, 0.28, mat('redPaint'), { pos: [0, 2.28, 0.22], rot: [Math.PI / 2, 0, 0], segments: 12 }),
+    cyl(0.24, 0.12, 0.22, mat('redPaint'), { pos: [0, 2.28, 0.46], rot: [Math.PI / 2, 0, 0], segments: 12 }),
+    cyl(0.2, 0.2, 0.04, mat('iron'), { pos: [0, 2.28, 0.58], rot: [Math.PI / 2, 0, 0], segments: 12 }),
   );
   const lampMat = uniqueMat('veinGlow');
-  g.add(box(0.14, 0.12, 0.14, lampMat, { pos: [0, 3.05, -0.05], shadow: false }));
-  const lights: LightDesc[] = [{ pos: [0, 3.05, 0.1], color: '#ff2a1a', intensity: 12, distance: 10, style: 'pulse', emissive: lampMat }];
+  g.add(box(0.1, 0.08, 0.1, lampMat, { pos: [0, 2.52, 0.22], shadow: false }));
+  const lights: LightDesc[] = [{ pos: [0, 2.52, 0.32], color: '#ff2a1a', intensity: 12, distance: 10, style: 'pulse', emissive: lampMat }];
   g.userData.lights = lights;
-  setColliders(g, [{ kind: 'circle', x: 0, z: 0, r: 0.3 }]);
+  g.userData.noSeat = true;
+  setColliders(g, []);
   return g;
 }
 

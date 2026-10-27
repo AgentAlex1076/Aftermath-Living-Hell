@@ -534,4 +534,43 @@ export function registerSounds(): void {
     clang(s, s.t, 180 + Math.random() * 120, 1.2, 0.05);
     return 1.3;
   }, { bus: 'amb', limit: 1, gap: 3 });
+
+  audio.register('cure.crack', (s) => {
+    noise(s, s.t, 0.12, 0.55, { type: 'highpass', f0: 2200, f1: 900, q: 0.8 });
+    clang(s, s.t, 1400, 0.08, 0.12);
+    return 0.16;
+  }, { limit: 4, gap: 0.05, gain: 0.7 });
+  audio.register('cure.shatter', (s) => {
+    noise(s, s.t, 0.45, 0.9, { type: 'highpass', f0: 2800, f1: 400, q: 0.6 });
+    clang(s, s.t, 1800, 0.2, 0.2);
+    clang(s, s.t + 0.08, 900, 0.35, 0.16);
+    noise(s, s.t + 0.05, 1.2, 0.35, { type: 'bandpass', f0: 700, f1: 240, q: 1.2 });
+    return 1.3;
+  }, { limit: 1, gap: 0.2 });
+  audio.register('cure.alarm', (s) => {
+    tone(s, 'sawtooth', 520, 780, s.t, 0.35, 0.16);
+    tone(s, 'square', 520, 780, s.t, 0.35, 0.05);
+    tone(s, 'sawtooth', 780, 420, s.t + 0.38, 0.4, 0.14);
+    return 0.85;
+  }, { limit: 1, gap: 0.4, gain: 0.55 });
+  audio.register('cure.heart', (s) => {
+    tone(s, 'sine', 58, 42, s.t, 0.12, 0.5);
+    tone(s, 'sine', 70, 36, s.t + 0.14, 0.16, 0.35);
+    return 0.32;
+  }, { bus: 'ui', limit: 2, gap: 0.12, gain: 0.8 });
+  audio.register('cure.seal', (s) => {
+    clang(s, s.t, 880, 0.2, 0.12);
+    tone(s, 'sine', 520, 880, s.t + 0.05, 0.3, 0.08);
+    return 0.4;
+  }, { bus: 'ui', limit: 1, gap: 0.1 });
+  audio.register('cure.unhook', (s) => {
+    clang(s, s.t, 640, 0.12, 0.1);
+    clang(s, s.t + 0.06, 420, 0.16, 0.08);
+    return 0.25;
+  }, { limit: 1, gap: 0.1, gain: 0.6 });
+  audio.register('cure.hang', (s) => {
+    clang(s, s.t, 520, 0.14, 0.12);
+    tone(s, 'triangle', 880, 660, s.t, 0.12, 0.05);
+    return 0.2;
+  }, { limit: 1, gap: 0.1, gain: 0.6 });
 }
