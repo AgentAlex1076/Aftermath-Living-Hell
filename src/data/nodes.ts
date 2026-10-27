@@ -22,6 +22,8 @@ export interface ResourceNodeDef {
   debrisColor: string;
   /** Releases a puff of toxic gas when hit. */
   toxic?: boolean;
+  /** Extra tools that gather at full power in addition to `tool`. */
+  tools?: readonly ToolKind[];
   /** Collider/footprint radius used for targeting. */
   radius: number;
   minimapColor: string;
@@ -59,6 +61,14 @@ export const NODES = {
   toxicBarrel: {
     id: 'toxicBarrel', name: 'Chemical Drum', verb: 'Drain', model: 'prop.barrelToxic', hp: 50, tool: 'pickaxe', handMultiplier: 0.25,
     yields: [{ item: 'chemicals', total: 12 }], hitWords: ['SPLRT!', 'HISSS!'], debrisColor: '#79ff3a', toxic: true, radius: 0.4, minimapColor: '#8cff3a',
+  },
+  fence: {
+    id: 'fence', name: 'Rotted Fence', verb: 'Chop', model: 'prop.fence', hp: 70, tool: 'axe', tools: ['axe', 'pickaxe'], handMultiplier: 0.25,
+    yields: [{ item: 'wood', total: 16 }, { item: 'scrap', total: 4 }], hitWords: ['THWACK!', 'KRAK!', 'SPLINT!'], debrisColor: '#6a5541', radius: 1.55, minimapColor: '#7a5c3e',
+  },
+  barrier: {
+    id: 'barrier', name: 'Road Barrier', verb: 'Break', model: 'prop.barrier', hp: 90, tool: 'pickaxe', tools: ['axe', 'pickaxe'], handMultiplier: 0.2,
+    yields: [{ item: 'scrap', total: 14 }, { item: 'stone', total: 8 }], hitWords: ['KRAK!', 'CHNK!', 'CRUNCH!'], debrisColor: '#8a8780', radius: 1.05, minimapColor: '#c9b44a',
   },
 } as const satisfies Record<string, ResourceNodeDef>;
 

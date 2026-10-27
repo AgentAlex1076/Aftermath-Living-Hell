@@ -5,6 +5,7 @@ import type { ItemAmount } from '../data/loot';
 import type { Inventory } from '../gameplay/Inventory';
 import type { Building, Piece, Placement } from '../gameplay/Building';
 import { el, q } from './dom';
+import { InspectCard } from './InspectCard';
 
 type Icons = Record<string, string>;
 
@@ -22,6 +23,7 @@ export class BuildUI {
   private barKey = '';
   private cursorKey = '';
   private cardKey = '';
+  private readonly inspect: InspectCard;
 
   constructor(
     parent: HTMLElement,
@@ -46,6 +48,8 @@ export class BuildUI {
     this.cursorTag = el('div', 'build-cursor');
     this.card = el('div', 'piece-card');
     parent.append(this.mode, this.cursorTag, this.card);
+    this.inspect = new InspectCard(parent, icons, inv);
+    this.inspect.attach(this.mode);
     this.tabs.addEventListener('click', (e) => {
       const btn = (e.target as Element).closest<HTMLButtonElement>('button[data-tab]');
       if (btn) onTab(Number(btn.dataset.tab));
@@ -59,7 +63,7 @@ export class BuildUI {
         const icon = this.icons[a.item] ? `style="background-image:url(${this.icons[a.item]})"` : '';
         if (kind === 'refund') return `<span class="chip refund"><i ${icon}></i>+${a.qty}</span>`;
         const ok = this.building.free || this.inv.count(a.item) >= a.qty;
-        return `<span class="chip ${ok ? 'ok' : 'missing'}"><i ${icon}></i>${a.qty}</span>`;
+        return `<span class="chip ${ok ? 'ok' : 'missing'}" data-inspect="${a.item}" data-need="${a.qty}"><i ${icon}></i>${a.qty}</span>`;
       })
       .join('');
   }
@@ -70,6 +74,7 @@ export class BuildUI {
     if (!active) {
       this.cursorTag.classList.remove('on');
       this.cursorKey = '';
+      this.inspect.hide();
       return;
     }
 
@@ -83,7 +88,7 @@ export class BuildUI {
         const def: PieceDef = PIECES[id];
         const icon = this.icons[pieceIconKey(id)];
         return `
-          <div class="bb-card ${i === selected ? 'selected' : ''}">
+          <div class="bb-card ${i === selected ? 'selected' : ''}" data-inspect-piece="${id}">
             <span class="bb-key">${i + 1}</span>
             <span class="bb-icon" ${icon ? `style="background-image:url(${icon})"` : ''}></span>
             <span class="bb-name">${def.name.toUpperCase()}</span>

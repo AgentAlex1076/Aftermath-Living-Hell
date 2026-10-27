@@ -5,6 +5,7 @@ import type { Crafting } from '../gameplay/Crafting';
 import type { Inventory } from '../gameplay/Inventory';
 import type { Oven } from '../gameplay/Oven';
 import { el, q } from './dom';
+import { InspectCard } from './InspectCard';
 
 type Icons = Record<string, string>;
 
@@ -15,7 +16,7 @@ function inputChips(inv: Inventory, icons: Icons, inputs: readonly { item: ItemI
   return inputs
     .map((a) => {
       const have = inv.count(a.item);
-      return `<span class="chip ${have >= a.qty ? 'ok' : 'missing'}" title="${itemName(a.item)}"><i ${iconStyle(icons, a.item)}></i>${Math.min(have, 999)}/${a.qty}</span>`;
+      return `<span class="chip ${have >= a.qty ? 'ok' : 'missing'}" data-inspect="${a.item}" data-need="${a.qty}"><i ${iconStyle(icons, a.item)}></i>${Math.min(have, 999)}/${a.qty}</span>`;
     })
     .join('');
 }
@@ -33,6 +34,7 @@ export class CraftingPanel {
   private readonly list: HTMLElement;
   private readonly queueList: HTMLElement;
   private readonly stationChip: HTMLElement;
+  private readonly inspect: InspectCard;
   private category: RecipeCategory | 'all' = 'all';
   private queueSignature: string | null = null;
 
@@ -54,9 +56,12 @@ export class CraftingPanel {
       </div>
     `;
     parent.appendChild(this.root);
+    this.inspect = new InspectCard(parent, icons, inv);
+    this.inspect.attach(this.root);
     this.list = q(this.root, '.recipe-list');
     this.queueList = q(this.root, '.queue-list');
     this.stationChip = q(this.root, '.station-chip');
+    this.stationChip.dataset.inspectStation = 'workbench';
 
     this.root.querySelectorAll<HTMLButtonElement>('[data-cat]').forEach((b) =>
       b.addEventListener('click', () => {
@@ -81,6 +86,7 @@ export class CraftingPanel {
 
   setVisible(visible: boolean): void {
     this.root.hidden = !visible;
+    if (!visible) this.inspect.hide();
     if (visible) this.refresh();
   }
 
@@ -101,7 +107,7 @@ export class CraftingPanel {
     const five = this.crafting.affordable(r, 5);
     const locked = r.station === 'workbench' && !bench;
     return `
-      <div class="recipe ${check.ok ? '' : 'unavailable'} ${locked ? 'locked' : ''}">
+      <div class="recipe ${check.ok ? '' : 'unavailable'} ${locked ? 'locked' : ''}" data-inspect="${r.output}">
         <span class="r-icon" ${iconStyle(this.icons, r.output)}></span>
         <div class="r-body">
           <div class="r-name">${itemName(r.output)}${r.qty > 1 ? ` <b>×${r.qty}</b>` : ''}</div>
@@ -204,6 +210,7 @@ export class OvenPanel {
   private readonly recipes: HTMLElement;
   private readonly jobs: HTMLElement;
   private readonly output: HTMLElement;
+  private readonly inspect: InspectCard;
   private jobsSignature: string | null = null;
 
   constructor(
@@ -241,6 +248,8 @@ export class OvenPanel {
       </div>
     `;
     parent.appendChild(this.root);
+    this.inspect = new InspectCard(parent, icons, inv);
+    this.inspect.attach(this.root);
     this.status = q(this.root, '.oven-status');
     this.fuelText = q(this.root, '.fuel-text');
     this.recipes = q(this.root, '.oven-recipes');
@@ -273,6 +282,7 @@ export class OvenPanel {
 
   setVisible(visible: boolean): void {
     this.root.hidden = !visible;
+    if (!visible) this.inspect.hide();
     if (visible) this.refresh();
   }
 
@@ -288,13 +298,13 @@ export class OvenPanel {
       const ok = have >= r.input.qty;
       const many = Math.floor(have / r.input.qty);
       return `
-        <div class="recipe oven-recipe ${ok ? '' : 'unavailable'}">
+        <div class="recipe oven-recipe ${ok ? '' : 'unavailable'}" data-inspect="${r.output.item}">
           <span class="r-icon" ${iconStyle(this.icons, r.input.item)}></span>
           <span class="arrow">▶</span>
           <span class="r-icon" ${iconStyle(this.icons, r.output.item)}></span>
           <div class="r-body">
             <div class="r-name">${itemName(r.output.item)}</div>
-            <div class="r-inputs"><span class="chip ${ok ? 'ok' : 'missing'}"><i ${iconStyle(this.icons, r.input.item)}></i>${Math.min(have, 999)}/${r.input.qty}</span><span class="r-time">${r.time}s EACH</span></div>
+            <div class="r-inputs"><span class="chip ${ok ? 'ok' : 'missing'}" data-inspect="${r.input.item}" data-need="${r.input.qty}"><i ${iconStyle(this.icons, r.input.item)}></i>${Math.min(have, 999)}/${r.input.qty}</span><span class="r-time">${r.time}s EACH</span></div>
           </div>
           <div class="r-actions">
             <button type="button" class="r-btn" data-add="${r.id}" data-n="1" ${ok ? '' : 'disabled'}>ADD</button>

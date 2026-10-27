@@ -46,6 +46,13 @@ export class MutantFx {
   private readonly rings: Mark[] = [];
   private readonly globMat = new THREE.MeshStandardMaterial({ color: '#b6ff4a', emissive: '#6cd61a', emissiveIntensity: 2.4, roughness: 0.3 });
 
+  private onSplash: ((x: number, z: number, damage: number) => void) | null = null;
+
+  /** Acid that lands near the cure burns the flask as well as whatever wall it hits. */
+  setSplash(fn: (x: number, z: number, damage: number) => void): void {
+    this.onSplash = fn;
+  }
+
   constructor(
     scene: THREE.Scene,
     private readonly player: Player,
@@ -145,6 +152,7 @@ export class MutantFx {
     }
     const piece = this.building.pieceNear(tx, tz, spec.splash);
     if (piece) this.building.damage(piece, spec.structureDamage);
+    this.onSplash?.(tx, tz, spec.structureDamage);
   }
 
   /** Tilts a flat ground mark to the slope under it. */

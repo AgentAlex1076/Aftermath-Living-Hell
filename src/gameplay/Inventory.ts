@@ -223,6 +223,27 @@ export class Inventory {
     return true;
   }
 
+  /**
+   * Splits `qty` off slot `i` into the first empty backpack slot. Returns false if the stack
+   * can't be split or the backpack has no empty slot.
+   */
+  splitOff(i: number, qty: number): boolean {
+    const s = this.slots[i];
+    if (!s || s.gun || qty < 1 || qty >= s.qty) return false;
+    let dest = -1;
+    for (let j = this.hotbarSize; j < this.size; j++) {
+      if (!this.slots[j]) {
+        dest = j;
+        break;
+      }
+    }
+    if (dest < 0) return false;
+    s.qty -= qty;
+    this.slots[dest] = { item: s.item, qty };
+    this.changed();
+    return true;
+  }
+
   /** Shift-click: moves a stack between hotbar and backpack. */
   quickMove(i: number): void {
     const s = this.slots[i];

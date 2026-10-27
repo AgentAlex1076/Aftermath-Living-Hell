@@ -43,6 +43,9 @@ export class FlowField {
   private readonly masks: Uint8Array;
   private lastVersion = -1;
   private cooldown = 0;
+  private goalX = 0;
+  private goalZ = 0;
+  private goalDirty = true;
   debug: THREE.LineSegments | null = null;
 
   constructor(private readonly collision: CollisionWorld, private readonly height?: HeightField) {
@@ -58,10 +61,18 @@ export class FlowField {
     this.rebuild();
   }
 
-  /** Call every tick. Rebuilds at most a few times a second after the collision world changes. */
+  /** Mutants flow toward this ground point (the cure, or the player while it's carried). */
+  setGoal(x: number, z: number): void {
+    if (Math.hypot(x - this.goalX, z - this.goalZ) < CELL * 0.35) return;
+    this.goalX = x;
+    this.goalZ = z;
+    this.goalDirty = true;
+  }
+
+  /** Call every tick. Rebuilds at most a few times a second after the collision world or the goal changes. */
   update(dt: number): void {
     this.cooldown = Math.max(0, this.cooldown - dt);
-    if (this.collision.watchVersion !== this.lastVersion && this.cooldown <= 0) {
+    if ((this.collision.watchVersion !== this.lastVersion || this.goalDirty) && this.cooldown <= 0) {
       this.rebuild();
       this.cooldown = 0.28;
     }
@@ -103,9 +114,10 @@ export class FlowField {
         this.masks[iz * N + ix] = this.collision.tagMaskAt((ix - GOAL) * CELL, (iz - GOAL) * CELL, CELL * 0.42, TAGS);
       }
     }
-    integrate(this.masks, BLOCKS_WALK, this.walkCost, this.walkDir, this.height, 1);
-    integrate(this.masks, BLOCKS_CRAWL, this.crawlCost, this.crawlDir, this.height, 1);
-    integrate(this.masks, BLOCKS_CLIMB, this.climbCost, this.climbDir, this.height, 0.28);
+    this.goalDirty = false;
+    integrate(this.masks, BLOCKS_WALK, this.walkCost, this.walkDir, this.height, 1, this.goalX, this.goalZ);
+    integrate(this.masks, BLOCKS_CRAWL, this.crawlCost, this.crawlDir, this.height, 1, this.goalX, this.goalZ);
+    integrate(this.masks, BLOCKS_CLIMB, this.climbCost, this.climbDir, this.height, 0.28, this.goalX, this.goalZ);
     if (this.debug?.visible) this.rebuildDebug();
   }
 
@@ -150,38 +162,34 @@ export class FlowField {
   }
 }
 
-function integrate(masks: Uint8Array, blocks: number, cost: Float32Array, dir: Float32Array, height?: HeightField, climbMul = 1): void {
+function integrate(
+  masks: Uint8Array, blocks: number, cost: Float32Array, dir: Float32Array,
+  height: HeightField | undefined, climbMul: number, goalX: number, goalZ: number,
+): void {
   const blocked = new Uint8Array(N * N);
   for (let i = 0; i < blocked.length; i++) blocked[i] = masks[i] & blocks ? 1 : 0;
 
   cost.fill(1e9);
   dir.fill(0);
-  // The hut walls would trap a single seed in the interior, so every open cell in the
-  // yard (and the hut doorway) is a goal. The wave then floods outward from the Home Zone.
-  const seedR2 = (5.5 / CELL) ** 2;
-  const seeds: number[] = [];
-  for (let iz = 0; iz < N; iz++) {
-    for (let ix = 0; ix < N; ix++) {
-      const i = iz * N + ix;
-      if (blocked[i]) continue;
-      if ((ix - GOAL) ** 2 + (iz - GOAL) ** 2 <= seedR2) seeds.push(i);
-    }
-  }
-  if (seeds.length === 0) {
+  // One open cell under the cure. Walls around it stay blocked, so the horde has to break through.
+  const gx = Math.max(0, Math.min(N - 1, Math.round(goalX / CELL) + GOAL));
+  const gz = Math.max(0, Math.min(N - 1, Math.round(goalZ / CELL) + GOAL));
+  let seed = gz * N + gx;
+  if (blocked[seed]) {
     let best = Infinity;
-    let seed = GOAL * N + GOAL;
-    for (let i = 0; i < blocked.length; i++) {
-      if (blocked[i]) continue;
-      const ix = i % N;
-      const iz = (i - ix) / N;
-      const d = (ix - GOAL) ** 2 + (iz - GOAL) ** 2;
-      if (d < best) {
-        best = d;
-        seed = i;
+    for (let iz = 0; iz < N; iz++) {
+      for (let ix = 0; ix < N; ix++) {
+        const i = iz * N + ix;
+        if (blocked[i]) continue;
+        const d = (ix - gx) ** 2 + (iz - gz) ** 2;
+        if (d < best) {
+          best = d;
+          seed = i;
+        }
       }
     }
-    seeds.push(seed);
   }
+  const seeds = [seed];
 
   const heap: number[] = [];
   const push = (i: number) => {

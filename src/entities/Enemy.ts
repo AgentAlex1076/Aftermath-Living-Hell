@@ -7,7 +7,7 @@ import type { TraversalLink } from '../world/Traversal';
 
 export type EnemyState = 'idle' | 'walk' | 'attack' | 'dead';
 /** What the current attack does when it lands. */
-export type AttackKind = 'melee' | 'spit' | 'scream' | 'slam';
+export type AttackKind = 'melee' | 'smash' | 'spit' | 'scream' | 'slam';
 
 /**
  * One mutant: pose, HP and a small procedural walk/attack/death on named body parts.
@@ -48,6 +48,14 @@ export class Enemy {
   voiceT = 0;
   /** Seconds left walking toward a noise it heard (roamers only). */
   alertT = 0;
+  /** Seconds left chasing the player after they landed a hit. */
+  grudge = 0;
+  /** This chase has already closed in, so backing off ends it. */
+  grudgeClose = false;
+  /** Sticky proximity, so the aggro bubble doesn't flicker. */
+  sticky = false;
+  /** What the current melee swing is aimed at. */
+  focus: 'player' | 'cure' | 'wall' = 'player';
   readonly alertAt = new THREE.Vector2();
   readonly wish = new THREE.Vector2();
   /** A traversal link it is following, how far along, and which way. */
@@ -109,6 +117,10 @@ export class Enemy {
     this.broodStage = 0;
     this.voiceT = 2 + Math.random() * 6;
     this.alertT = 0;
+    this.grudge = 0;
+    this.grudgeClose = false;
+    this.sticky = false;
+    this.focus = 'player';
     this.wish.set(0, 0);
     this.link = null;
     this.setOpacity(1);
@@ -174,8 +186,12 @@ export class Enemy {
     const swing = Math.sin(this.phase) * clamp(this.speed / Math.max(d.speed, 0.2), 0, 1);
     const bob = Math.abs(Math.sin(this.phase)) * 0.04 * clamp(this.speed, 0, 1);
 
-    if (n.body) n.body.position.y = bob + this.flinch * 0.05;
+    if (n.body) {
+      n.body.position.y = bob + this.flinch * 0.05;
+      n.body.position.z = 0;
+    }
     if (n.hips) {
+      n.hips.position.z = 0;
       n.hips.rotation.x = (this.crawl ? 0 : 0.08) + swing * 0.06;
       n.hips.rotation.z = swing * 0.05 + this.flinch * 0.15;
     }
@@ -201,6 +217,18 @@ export class Enemy {
           arm = p < 0.55 ? -2.6 * (p / 0.55) : -2.6 + 3.4 * Math.min(1, (p - 0.55) / 0.12);
           if (n.hips) n.hips.rotation.x += p < 0.55 ? -0.25 * strike : 0.45 * strike;
           break;
+        case 'smash': {
+          const wind = p < 0.55 ? p / 0.55 : 1;
+          const rec = p < 0.55 ? 0 : Math.min(1, (p - 0.55) / 0.45);
+          arm = p < 0.55 ? -2.9 * wind : -2.9 + 3.6 * rec;
+          if (n.hips) {
+            n.hips.rotation.x += p < 0.55 ? -0.55 * wind : 0.7 * rec;
+            n.hips.position.z = (p < 0.55 ? 0.28 * wind : 0.28 - 0.4 * rec);
+          }
+          if (n.body) n.body.position.z = (p < 0.55 ? 0.18 * wind : 0.18 - 0.32 * rec);
+          if (n.head) n.head.rotation.x += p < 0.55 ? -0.35 * wind : 0.5 * rec;
+          break;
+        }
         default:
           arm = -1.6 * strike;
           if (n.hips) n.hips.rotation.x += strike * 0.35;

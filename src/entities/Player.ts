@@ -282,7 +282,6 @@ export class Player {
     speed *= walk.mul * buffMove(this.buff);
     if (this.swinging) speed *= cfg.swingMoveMultiplier;
     if (this.load > 0) speed *= CONFIG.guns.weightSoft / (CONFIG.guns.weightSoft + this.load);
-    if (this.aiming) speed *= CONFIG.combat.aimMove;
     if (moving) {
       const facingX = Math.sin(this.facing);
       const facingZ = Math.cos(this.facing);

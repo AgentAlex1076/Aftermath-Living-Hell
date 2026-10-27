@@ -41,18 +41,26 @@ export class Hud {
   private lastDayKey = '';
   private readonly raidSplash: HTMLElement;
   private readonly dangerPulse: HTMLElement;
+  private readonly cureAlert: HTMLElement;
+  private readonly cureClock: HTMLElement;
+  private readonly carryChip: HTMLElement;
+  private lastCure = '';
   private readonly prompt: HTMLElement;
   private readonly promptText: HTMLElement;
   private readonly toasts: HTMLElement;
   private readonly help: HTMLElement;
   private readonly crosshair: HTMLElement;
   private lastPrompt = '';
+  private readonly lampChip: HTMLElement;
   private readonly ammoChip: HTMLElement;
   private lastAmmo = '';
   private readonly bossBar: HTMLElement;
   private readonly bossName: HTMLElement;
   private readonly bossFill: HTMLElement;
   private lastBoss: string | null = null;
+  private readonly camFixed: HTMLElement;
+  private readonly camFree: HTMLElement;
+  private readonly camLock: HTMLElement;
 
   constructor(parent: HTMLElement) {
     this.letterboxRoot = el('div', 'letterbox-container');
@@ -66,6 +74,8 @@ export class Hud {
     this.root.innerHTML = `
       <div class="gas-overlay"></div>
       <div class="danger-pulse"></div>
+      <div class="cure-alert"><span class="cure-alert-label">CURE BREACH</span><span class="cure-alert-clock">0:30</span></div>
+      <div class="carry-chip">CARRYING THE CURE</div>
       <div class="build-tag">AFTERMATH // BUILD 1.0 — LIVING HELL</div>
       <div class="boss-bar"><span class="boss-name"></span><div class="boss-track"><div class="boss-fill"></div></div></div>
       <div class="gas-warning"><span class="gas-icon"></span><span class="gas-text">TOXIC GAS</span></div>
@@ -98,6 +108,12 @@ export class Hud {
         <div class="bar short bar-stamina"><span class="bar-label">STAMINA</span><div class="bar-track"><div class="bar-fill"></div><i class="bar-cap"></i></div><span class="bar-value">100</span></div>
       </div>
       <div class="prompt"><span class="key">E</span><span class="prompt-text"></span></div>
+      <div class="cam-controls" data-ui-capture>
+        <button type="button" class="cam-btn" data-cam="fixed" title="Normal camera">CAM</button>
+        <button type="button" class="cam-btn" data-cam="free" title="Free camera — drag RMB to orbit">FREE</button>
+        <button type="button" class="cam-btn cam-lock" data-cam="lock" title="Lock free-cam view">LOCK</button>
+      </div>
+      <div class="lamp-chip"><i></i><span>LAMP</span></div>
       <div class="ammo-chip">
         <span class="ammo-mag">0</span><span class="ammo-sep">/</span><span class="ammo-pack">0</span>
         <span class="ammo-mode">SEMI</span>
@@ -114,13 +130,16 @@ export class Hud {
           <kbd>WASD</kbd><span>Move</span>
           <kbd>MOUSE</kbd><span>Aim</span>
           <kbd>LMB</kbd><span>Fire / melee / gather / use</span>
-          <kbd>RMB</kbd><span>Aim (tighter spread)</span>
+          <kbd>RMB</kbd><span>Orbit (free cam)</span>
+          <kbd>CAM</kbd><span>Normal / free / lock view</span>
+          <kbd>L</kbd><span>Flashlight</span>
           <kbd>R</kbd><span>Reload / clear jam</span>
           <kbd>1 – 6</kbd><span>Hotbar</span>
           <kbd>I / TAB</kbd><span>Backpack</span>
           <kbd>SHIFT</kbd><span>Sprint</span>
           <kbd>SPACE</kbd><span>Dodge roll</span>
           <kbd>E</kbd><span>Interact / search</span>
+          <kbd>E HOLD</kbd><span>Unhook the cure · move a station</span>
           <kbd>B</kbd><span>Build mode · Q switches tabs</span>
           <kbd>HAMMER</kbd><span>LMB fix · R upgrade · 5 hits scrap</span>
           <kbd>AXE / PICK</kbd><span>5 hits scrap a build (2s window)</span>
@@ -162,15 +181,23 @@ export class Hud {
     this.dayNum = q(this.root, '.day-num');
     this.raidSplash = q(this.root, '.raid-splash');
     this.dangerPulse = q(this.root, '.danger-pulse');
+    this.cureAlert = q(this.root, '.cure-alert');
+    this.cureClock = q(this.root, '.cure-alert-clock');
+    this.carryChip = q(this.root, '.carry-chip');
     this.prompt = q(this.root, '.prompt');
     this.promptText = q(this.root, '.prompt-text');
     this.toasts = q(this.root, '.toasts');
     this.help = q(this.root, '.help');
     this.crosshair = q(this.root, '.crosshair');
+    this.lampChip = q(this.root, '.lamp-chip');
     this.ammoChip = q(this.root, '.ammo-chip');
     this.bossBar = q(this.root, '.boss-bar');
     this.bossName = q(this.root, '.boss-name');
     this.bossFill = q(this.root, '.boss-fill');
+    this.camFixed = q(this.root, '[data-cam="fixed"]');
+    this.camFree = q(this.root, '[data-cam="free"]');
+    this.camLock = q(this.root, '[data-cam="lock"]');
+    this.setCameraMode('fixed', false);
 
     events.on('toast', ({ text, tone }) => this.toast(text, tone));
     events.on('raid:warning', ({ seconds, away }) => this.splash(
@@ -219,6 +246,29 @@ export class Hud {
 
   setVisible(visible: boolean): void {
     this.root.classList.toggle('visible', visible);
+  }
+
+  /** Small camera mode buttons: normal view, free orbit, lock free view. */
+  onCameraControls(handlers: { fixed: () => void; free: () => void; lock: () => void }): void {
+    this.camFixed.addEventListener('click', (e) => {
+      e.stopPropagation();
+      handlers.fixed();
+    });
+    this.camFree.addEventListener('click', (e) => {
+      e.stopPropagation();
+      handlers.free();
+    });
+    this.camLock.addEventListener('click', (e) => {
+      e.stopPropagation();
+      handlers.lock();
+    });
+  }
+
+  setCameraMode(mode: 'fixed' | 'free', locked: boolean): void {
+    this.camFixed.classList.toggle('on', mode === 'fixed');
+    this.camFree.classList.toggle('on', mode === 'free' && !locked);
+    this.camLock.classList.toggle('on', mode === 'free' && locked);
+    this.camLock.hidden = mode === 'fixed';
   }
 
   setCutsceneLetterbox(active: boolean): void {
@@ -367,6 +417,25 @@ export class Hud {
     this.raidSplash.classList.add('show');
   }
 
+  setCureBreach(on: boolean, seconds: number): void {
+    const key = on ? seconds.toFixed(1) : '';
+    this.cureAlert.classList.toggle('on', on);
+    this.dangerPulse.classList.toggle('cure', on);
+    if (!on) {
+      if (this.lastCure !== '') this.lastCure = '';
+      return;
+    }
+    if (key === this.lastCure) return;
+    this.lastCure = key;
+    const s = Math.max(0, Math.ceil(seconds));
+    const m = Math.floor(s / 60);
+    this.cureClock.textContent = `${m}:${String(s % 60).padStart(2, '0')}`;
+  }
+
+  setCarrying(on: boolean): void {
+    this.carryChip.classList.toggle('on', on);
+  }
+
   setPrompt(verb: string | null, label = ''): void {
     const key = verb ? `${verb}|${label}` : '';
     if (key === this.lastPrompt) return;
@@ -377,6 +446,10 @@ export class Hud {
 
   toggleHelp(): void {
     this.help.classList.toggle('open');
+  }
+
+  setFlashlight(on: boolean): void {
+    this.lampChip.classList.toggle('on', on);
   }
 
   setAmmo(on: boolean, loaded: number, mag: number, reserve: number, mode: string, jammed: boolean, reload: number): void {

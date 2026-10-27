@@ -44,12 +44,14 @@ export interface ContainerInstance {
   readonly uid: string;
   readonly def: ContainerDef;
   readonly object: THREE.Object3D;
-  readonly x: number;
-  readonly z: number;
+  x: number;
+  z: number;
   readonly interactable: Interactable;
   readonly danger: number;
   readonly colliders: Collider[];
   readonly chunk: Chunk | null;
+  /** Empty crates/chests can be smashed once looted. Hut supply crate stays. */
+  breakable: boolean;
 }
 
 export interface StructureMarker {
@@ -288,6 +290,34 @@ export class World {
     return best;
   }
 
+  /** Nearest container in the swing cone (empty smashable chests, etc.). */
+  findContainerInCone(pos: THREE.Vector3, facing: number, reach: number, coneDeg: number): ContainerInstance | null {
+    const half = (coneDeg * Math.PI) / 360;
+    let best: ContainerInstance | null = null;
+    let bestScore = Infinity;
+    for (const c of this.containers) {
+      const dx = c.x - pos.x;
+      const dz = c.z - pos.z;
+      const dist = Math.hypot(dx, dz) - 0.45;
+      if (dist > reach) continue;
+      const ang = Math.abs(wrapAngle(Math.atan2(dx, dz) - facing));
+      if (ang > half && dist > 0.25) continue;
+      const score = dist + ang * 0.8;
+      if (score < bestScore) {
+        bestScore = score;
+        best = c;
+      }
+    }
+    return best;
+  }
+
+  /** Smash an emptied breakable container. Returns false if it still has loot or isn't breakable. */
+  smashContainer(c: ContainerInstance): boolean {
+    if (!c.breakable || this.contentsOf(c).length > 0) return false;
+    this.removeContainer(c);
+    return true;
+  }
+
   /** Applies gathering damage. Returns what the hit yielded and whether the node is used up. */
   damageNode(n: NodeInstance, amount: number, fromX: number, fromZ: number): { gained: ItemAmount[]; destroyed: boolean } {
     const dealt = Math.min(amount, n.hp);
@@ -422,7 +452,7 @@ export class World {
       enabled: !looted,
       onInteract: () => this.ctx.onSearch(c),
     };
-    const c: ContainerInstance = { uid, def, object, x, z, interactable, danger: this.biomes.danger(x, z), colliders, chunk };
+    const c: ContainerInstance = { uid, def, object, x, z, interactable, danger: this.biomes.danger(x, z), colliders, chunk, breakable: true };
     this.ctx.interactions.add(interactable);
     this.containers.add(c);
     chunk?.containers.add(c);

@@ -7,7 +7,8 @@ export type Action =
   | 'dodge'
   | 'interact'
   | 'fire'
-  | 'aim'
+  | 'orbit'
+  | 'flashlight'
   | 'reload'
   | 'inventory'
   | 'build'
@@ -52,6 +53,7 @@ const KEY_BINDINGS: Record<string, Action> = {
   Escape: 'pause',
   KeyM: 'map',
   KeyN: 'mute',
+  KeyL: 'flashlight',
   Digit1: 'hotbar1',
   Digit2: 'hotbar2',
   Digit3: 'hotbar3',
@@ -63,7 +65,7 @@ const KEY_BINDINGS: Record<string, Action> = {
 
 const MOUSE_BINDINGS: Record<number, Action> = {
   0: 'fire',
-  2: 'aim',
+  2: 'orbit',
 };
 
 /** Actions that should still register while gameplay input is disabled (menus, pause). */
@@ -230,6 +232,11 @@ export class Input {
       this.mouseScreen.y = window.innerHeight / 2;
       this.mouseInWindow = true;
       return;
+    }
+
+    if (this.down.has('orbit')) {
+      this.mouseDelta.x += e.movementX || 0;
+      this.mouseDelta.y += e.movementY || 0;
     }
 
     this.mouseOverUi = capturedByUi(e);

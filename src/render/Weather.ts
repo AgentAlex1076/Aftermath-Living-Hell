@@ -5,7 +5,8 @@ import { sfx } from '../audio/AudioEngine';
 import { getGroundMaterial } from '../world/Terrain';
 
 const DROPS = 3200;
-const SPLASHES = 700;
+const SPLASH_EVENTS = 260;
+const SPLASH_PARTS = 5;
 const BOX = new THREE.Vector3(64, 26, 64);
 
 export type WeatherKind = 'clear' | 'drizzle' | 'storm';
@@ -49,35 +50,59 @@ const splashVertex = /* glsl */ `
   uniform float uIntensity;
   uniform vec3 uFocus;
   uniform vec3 uBox;
-  uniform float uScale;
   attribute vec3 aSeed;
+  attribute float aPart;
+  attribute vec2 aCorner;
   varying float vLife;
   varying float vOn;
+  varying float vRing;
+  varying vec2 vUv;
   float hash(float n) { return fract(sin(n) * 43758.5453); }
   void main() {
-    float rate = 1.6 + aSeed.y * 1.4;
+    float rate = 1.35 + aSeed.y * 1.1;
     float cycle = uTime * rate + aSeed.x * 10.0;
     float k = floor(cycle);
     vLife = fract(cycle);
     vec2 r = vec2(hash(k * 12.9 + aSeed.z * 91.0), hash(k * 7.3 + aSeed.x * 53.0));
-    vec2 xz = uFocus.xz + (r - 0.5) * uBox.xz * 0.7;
+    vec2 xz = uFocus.xz + (r - 0.5) * uBox.xz * 0.55;
     vOn = step(aSeed.z, uIntensity);
-    vec4 mv = modelViewMatrix * vec4(xz.x, uFocus.y + 0.22, xz.y, 1.0);
-    gl_Position = projectionMatrix * mv;
-    gl_PointSize = (0.06 + vLife * 0.26) * uScale / -mv.z;
+    vRing = step(aPart, 0.5);
+    vUv = aCorner * 0.5 + 0.5;
+    vec3 p;
+    if (aPart < 0.5) {
+      float rad = 0.05 + vLife * 0.62;
+      p = vec3(xz.x + aCorner.x * rad, uFocus.y + 0.03, xz.y + aCorner.y * rad);
+    } else {
+      float ang = aPart * 1.67 + aSeed.y * 6.2832;
+      float dist = vLife * (0.16 + aSeed.z * 0.28);
+      float h = vLife * (1.0 - vLife) * 0.52;
+      vec3 world = vec3(xz.x + cos(ang) * dist, uFocus.y + 0.04 + h, xz.y + sin(ang) * dist);
+      vec4 mv = modelViewMatrix * vec4(world, 1.0);
+      mv.xy += aCorner * (0.028 + (1.0 - vLife) * 0.02);
+      gl_Position = projectionMatrix * mv;
+      return;
+    }
+    gl_Position = projectionMatrix * modelViewMatrix * vec4(p, 1.0);
   }
 `;
 
 const splashFragment = /* glsl */ `
   varying float vLife;
   varying float vOn;
+  varying float vRing;
+  varying vec2 vUv;
   void main() {
-    vec2 q = gl_PointCoord - 0.5;
+    vec2 q = vUv - 0.5;
     float d = length(q) * 2.0;
-    float ring = smoothstep(0.6, 0.85, d) * smoothstep(1.0, 0.85, d);
-    float a = ring * (1.0 - vLife) * 0.5 * vOn;
+    float a;
+    if (vRing > 0.5) {
+      float ring = smoothstep(0.55, 0.78, d) * smoothstep(1.0, 0.84, d);
+      a = ring * (1.0 - vLife) * 0.55 * vOn;
+    } else {
+      a = (1.0 - d) * (1.0 - vLife) * 0.7 * vOn;
+    }
     if (a < 0.01) discard;
-    gl_FragColor = vec4(0.78, 0.84, 0.88, a);
+    gl_FragColor = vec4(0.78, 0.85, 0.9, a);
   }
 `;
 
@@ -103,14 +128,14 @@ export class Weather {
   private readonly rainMat: THREE.ShaderMaterial;
   private readonly splashMat: THREE.ShaderMaterial;
   private readonly rainMesh: THREE.Mesh;
-  private readonly splashPoints: THREE.Points;
+  private readonly splashMesh: THREE.Mesh;
   private readonly wind = new THREE.Vector2(2.2, 0.8);
   private readonly ground: THREE.MeshStandardMaterial;
   private readonly groundColor = new THREE.Color();
 
   constructor(scene: THREE.Scene, seed: number) {
     this.rng = new Rng(seed ^ 0x7a1e);
-    this.timer = this.rng.range(50, 120);
+    this.timer = this.rng.range(90, 200);
 
     const shared = {
       uTime: { value: 0 },
@@ -133,22 +158,18 @@ export class Weather {
     scene.add(this.rainMesh);
 
     this.splashMat = new THREE.ShaderMaterial({
-      uniforms: { ...shared, uScale: { value: 300 } },
+      uniforms: { ...shared },
       vertexShader: splashVertex,
       fragmentShader: splashFragment,
       transparent: true,
       depthWrite: false,
+      side: THREE.DoubleSide,
     });
-    const sg = new THREE.BufferGeometry();
-    const seeds = new Float32Array(SPLASHES * 3);
-    for (let i = 0; i < seeds.length; i++) seeds[i] = this.rng.next();
-    sg.setAttribute('position', new THREE.BufferAttribute(new Float32Array(SPLASHES * 3), 3));
-    sg.setAttribute('aSeed', new THREE.BufferAttribute(seeds, 3));
-    this.splashPoints = new THREE.Points(sg, this.splashMat);
-    this.splashPoints.frustumCulled = false;
-    this.splashPoints.renderOrder = 4;
-    this.splashPoints.name = 'splashes';
-    scene.add(this.splashPoints);
+    this.splashMesh = new THREE.Mesh(buildSplashGeometry(this.rng), this.splashMat);
+    this.splashMesh.frustumCulled = false;
+    this.splashMesh.renderOrder = 4;
+    this.splashMesh.name = 'splashes';
+    scene.add(this.splashMesh);
 
     this.ground = getGroundMaterial();
     this.groundColor.copy(this.ground.color);
@@ -166,10 +187,8 @@ export class Weather {
     this.bolt(0.2);
   }
 
-  /** Drawing-buffer height and vertical FOV, so splash sprites can be sized in metres. */
-  setPixelScale(heightPx: number, fovDeg = 38): void {
-    this.splashMat.uniforms.uScale.value = heightPx / (2 * Math.tan((fovDeg * Math.PI) / 360));
-  }
+  /** Kept so Game can still call it after a resize; splashes are now world-sized quads. */
+  setPixelScale(_heightPx: number, _fovDeg = 38): void {}
 
   update(dt: number, focus: THREE.Vector3): void {
     this.time += dt;
@@ -187,7 +206,7 @@ export class Weather {
       m.uniforms.uFocus.value.copy(focus);
     }
     this.rainMesh.visible = this.rain > 0.01;
-    this.splashPoints.visible = this.rain > 0.05;
+    this.splashMesh.visible = this.rain > 0.05;
 
     this.ground.color.copy(this.groundColor).multiplyScalar(1 - this.wet * 0.28);
     this.ground.roughness = 1 - this.wet * 0.42;
@@ -216,10 +235,10 @@ export class Weather {
   private advance(): void {
     if (this.kind === 'clear') {
       this.setKind(this.rng.chance(0.35) ? 'storm' : 'drizzle');
-      this.timer = this.rng.range(45, 120);
+      this.timer = this.rng.range(28, 80);
     } else {
       this.setKind('clear');
-      this.timer = this.rng.range(70, 200);
+      this.timer = this.rng.range(160, 360);
     }
   }
 
@@ -260,6 +279,38 @@ function buildRainGeometry(rng: Rng): THREE.BufferGeometry {
   const g = new THREE.BufferGeometry();
   g.setAttribute('position', new THREE.BufferAttribute(pos, 3));
   g.setAttribute('aDrop', new THREE.BufferAttribute(drop, 3));
+  g.setAttribute('aCorner', new THREE.BufferAttribute(corner, 2));
+  g.setIndex(new THREE.BufferAttribute(index, 1));
+  return g;
+}
+
+function buildSplashGeometry(rng: Rng): THREE.BufferGeometry {
+  const quads = SPLASH_EVENTS * SPLASH_PARTS;
+  const pos = new Float32Array(quads * 4 * 3);
+  const seed = new Float32Array(quads * 4 * 3);
+  const part = new Float32Array(quads * 4);
+  const corner = new Float32Array(quads * 4 * 2);
+  const index = new Uint32Array(quads * 6);
+  const corners: [number, number][] = [[-1, -1], [1, -1], [-1, 1], [1, 1]];
+  for (let e = 0; e < SPLASH_EVENTS; e++) {
+    const sx = rng.next();
+    const sy = rng.next();
+    const sz = rng.next();
+    for (let p = 0; p < SPLASH_PARTS; p++) {
+      const i = e * SPLASH_PARTS + p;
+      for (let k = 0; k < 4; k++) {
+        const v = i * 4 + k;
+        seed.set([sx, sy, sz], v * 3);
+        part[v] = p;
+        corner.set(corners[k], v * 2);
+      }
+      index.set([i * 4, i * 4 + 2, i * 4 + 1, i * 4 + 1, i * 4 + 2, i * 4 + 3], i * 6);
+    }
+  }
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+  g.setAttribute('aSeed', new THREE.BufferAttribute(seed, 3));
+  g.setAttribute('aPart', new THREE.BufferAttribute(part, 1));
   g.setAttribute('aCorner', new THREE.BufferAttribute(corner, 2));
   g.setIndex(new THREE.BufferAttribute(index, 1));
   return g;

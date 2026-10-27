@@ -511,7 +511,7 @@ class Planner {
     if (roll < 0.55) this.house(x, z, 'structure.ruinHouse', fx, fz);
     else if (roll < 0.7) this.node('car', x + fx * 5, z + fz * 5, along + this.rng.range(-0.2, 0.2), 2.7);
     else if (roll < 0.8) this.node('rubble', x, z, this.rng.range(0, 6.3), 1.2);
-    if (this.rng.chance(0.3)) this.prop('prop.fence', x - fx * 6.5, z - fz * 6.5, along, 1.8);
+    if (this.rng.chance(0.3)) this.node('fence', x - fx * 6.5, z - fz * 6.5, along, 1.8);
   }
 
   /** Fence segments (3 m each) around a rectangle, with a gate gap on one side and a few broken bits. */
@@ -527,7 +527,7 @@ class Planner {
         const t = (k + 0.5) / count;
         if (side === gateSide && Math.abs(t - 0.5) * len < 3.5) continue;
         if (this.rng.chance(0.15)) continue;
-        this.prop('prop.fence', ax + (bx - ax) * t, az + (bz - az) * t, rot, 1.8);
+        this.node('fence', ax + (bx - ax) * t, az + (bz - az) * t, rot, 1.8);
       }
     });
   }
@@ -598,7 +598,7 @@ function planFarm(reg: Region, p: Planner): void {
         const t = -len / 2 + (s + 0.5) * 3;
         const px = horiz ? x + t : side === 1 ? r.maxX + 1 : r.minX - 1;
         const pz = horiz ? (side === 0 ? r.minZ - 1 : r.maxZ + 1) : z + t;
-        p.prop('prop.fence', px, pz, horiz ? 0 : Math.PI / 2, 1.8);
+        p.node('fence', px, pz, horiz ? 0 : Math.PI / 2, 1.8);
       }
     }
     if (p.rng.chance(0.5)) p.node('carcass', x + p.rng.range(-hw, hw) * 0.7, z + p.rng.range(-hd, hd) * 0.7, p.rng.range(0, 6.3), 1.1);

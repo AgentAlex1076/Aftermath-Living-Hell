@@ -134,7 +134,7 @@ export class Siege {
   private targets(): Piece[] {
     const list: Piece[] = [];
     for (const p of this.building.pieces) {
-      if (p.def.kind === 'foundation' || p.def.walkThrough || p.def.id === 'storageBox') continue;
+      if (p.def.kind === 'foundation' || p.def.kind === 'roof' || p.def.walkThrough || p.def.id === 'storageBox') continue;
       if (Math.hypot(p.x, p.z) > CONFIG.homeZone.radius + 12 || !inSector(p, this.heading)) continue;
       list.push(p);
     }

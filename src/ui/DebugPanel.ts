@@ -17,6 +17,7 @@ export interface DebugActions {
   shake: () => void;
   toggleFreeBuild: (on: boolean) => void;
   damageBuilds: () => void;
+  crackCure: () => void;
   addAttention: (amount: number) => void;
   crankSiren: () => void;
   startRaid: () => void;
@@ -130,6 +131,7 @@ export class DebugPanel {
             <button data-a="skipCd">Skip countdown</button>
             <button data-a="killRaid">Kill raid</button>
             <button data-a="damageBuilds" class="danger">Damage builds nearby</button>
+            <button data-a="crackCure" class="danger">Crack the cure</button>
           </div>
         </details>
         <details open>
@@ -176,6 +178,7 @@ export class DebugPanel {
     q(this.root, '[data-a="rifle"]').addEventListener('click', () => actions.giveRifle?.());
     q(this.root, '[data-a="shake"]').addEventListener('click', actions.shake);
     q(this.root, '[data-a="damageBuilds"]').addEventListener('click', actions.damageBuilds);
+    q(this.root, '[data-a="crackCure"]').addEventListener('click', actions.crackCure);
     q(this.root, '[data-a="att25"]').addEventListener('click', () => actions.addAttention(25));
     q(this.root, '[data-a="att100"]').addEventListener('click', () => actions.addAttention(100));
     q(this.root, '[data-a="siren"]').addEventListener('click', actions.crankSiren);

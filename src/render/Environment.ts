@@ -6,22 +6,22 @@ const FOG_COLOR = new THREE.Color('#4e5752');
 const TOXIC_FOG_COLOR = new THREE.Color('#56692c');
 const RAIN_FOG_COLOR = new THREE.Color('#3f4a4e');
 const FLASH_COLOR = new THREE.Color('#aab4c8');
-const NIGHT_FOG_COLOR = new THREE.Color('#14203a');
+const NIGHT_FOG_COLOR = new THREE.Color('#0a101c');
 const TWILIGHT_FOG_COLOR = new THREE.Color('#5c4a42');
 const SUN_COLOR = new THREE.Color('#d2d8cb');
 const TWILIGHT_SUN_COLOR = new THREE.Color('#e6a074');
 const MOON_COLOR = new THREE.Color('#7f9ee6');
 const SKY_COLOR = new THREE.Color('#a3ada6');
-const NIGHT_SKY_COLOR = new THREE.Color('#3a5690');
+const NIGHT_SKY_COLOR = new THREE.Color('#1c2a48');
 const FOG_DENSITY = 0.019;
 const TOXIC_FOG_DENSITY = 0.028;
 const RAIN_FOG_DENSITY = 0.006;
 const SUN = 2.1;
 const SKY = 1.7;
-/** How much sun and sky survive at full night (moonlight). */
-const NIGHT_SUN = 0.28;
-const NIGHT_SKY = 0.5;
-const LAMP = 7;
+/** How much sun and sky survive at full night (moonlight). Dim enough that a flashlight matters. */
+const NIGHT_SUN = 0.08;
+const NIGHT_SKY = 0.16;
+const LAMP = 1.35;
 
 const ASH_COUNT = 1800;
 const ASH_SIZE = 0.07;

@@ -81,11 +81,11 @@ export class Shooting {
     return this.reloading || this.jammed;
   }
 
-  update(dt: number, fireHeld: boolean, reloadPressed: boolean, aiming: boolean): void {
+  update(dt: number, fireHeld: boolean, reloadPressed: boolean): void {
     const gun = this.gun;
     const stats = this.stats;
     this.player.load = stats ? stats.weight : 0;
-    this.player.aiming = !!gun && aiming;
+    this.player.aiming = false;
 
     this.heat = Math.max(0, this.heat - CONFIG.combat.heatDecay * dt);
     this.cooldown = Math.max(0, this.cooldown - dt);
@@ -133,23 +133,23 @@ export class Shooting {
     this.fireWasDown = fireHeld;
 
     if (this.burstLeft > 0 && this.cooldown <= 0) {
-      this.discharge(gun, stats, aiming);
+      this.discharge(gun, stats);
       return;
     }
 
     if (stats.fireMode === 'semi') {
-      if (pressed) this.tryFire(gun, stats, aiming);
+      if (pressed) this.tryFire(gun, stats);
     } else if (stats.fireMode === 'burst') {
       if (pressed && this.burstLeft <= 0) {
         this.burstLeft = stats.burstCount;
-        this.tryFire(gun, stats, aiming);
+        this.tryFire(gun, stats);
       }
     } else if (fireHeld) {
-      this.tryFire(gun, stats, aiming);
+      this.tryFire(gun, stats);
     }
   }
 
-  private tryFire(gun: GunInstance, stats: GunStats, aiming: boolean): void {
+  private tryFire(gun: GunInstance, stats: GunStats): void {
     if (this.cooldown > 0 || this.reloading || this.jammed) return;
     if (gun.loaded < stats.ammoPerShot) {
       if (this.inv.count('ammo') > 0) this.startReload(false);
@@ -168,7 +168,7 @@ export class Shooting {
       this.floaters.spawn(this.player.position.clone().setY(this.player.position.y + 2.1), 'KLICK', 'warn');
       return;
     }
-    this.discharge(gun, stats, aiming);
+    this.discharge(gun, stats);
   }
 
   /** Turrets and traps fire through here: same tracers, no player heat or magazine. */
@@ -192,7 +192,7 @@ export class Shooting {
     }
   }
 
-  private discharge(gun: GunInstance, stats: GunStats, aiming: boolean): void {
+  private discharge(gun: GunInstance, stats: GunStats): void {
     gun.loaded -= stats.ammoPerShot;
     this.cooldown = 1 / Math.max(0.4, stats.fireRate);
     this.heat = Math.min(1, this.heat + 0.08 + stats.heat * 2);
@@ -201,9 +201,8 @@ export class Shooting {
 
     const p = this.player;
     const facing = p.facing;
-    const aimMul = aiming ? CONFIG.combat.aimSpread : 1;
     const stability = Math.max(0.4, this.player.buff?.def.aim ?? 1);
-    const spread = ((stats.spread * aimMul + this.heat * stats.recoil * 0.15) / stability) * (Math.PI / 180);
+    const spread = ((stats.spread + this.heat * stats.recoil * 0.15) / stability) * (Math.PI / 180);
     const muzzle = 0.85;
     const sx = p.position.x + Math.sin(facing) * muzzle;
     const sy = p.position.y + 1.15;
@@ -270,7 +269,7 @@ export class Shooting {
       }
       const enemy = this.horde.near(nx, nz, r + 0.35, ny);
       if (enemy) {
-        this.horde.hurt(enemy, s.damage);
+        this.horde.hurt(enemy, s.damage, '', true);
         this.killShot(s, nx, ny, nz);
         continue;
       }
